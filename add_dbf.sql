@@ -1,0 +1,1 @@
+ALTER TABLESPACE <tablespace_name> ADD DATAFILE ''<pathtodbf>' SIZE 4G AUTOEXTEND ON;
