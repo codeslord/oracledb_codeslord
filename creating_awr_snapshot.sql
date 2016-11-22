@@ -1,0 +1,6 @@
+BEGIN
+DBMS_WORKLOAD_REPOSITORY.CREATE_SNAPSHOT ();
+END;
+/
+
+@?/rdbms/admin/awrrpt.sql
