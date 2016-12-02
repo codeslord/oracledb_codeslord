@@ -1,0 +1,375 @@
+ Installing and Configuring Statspack
+
+$ cd $ORACLE_HOME/rdbms/admin
+$ sqlplus "/as sysdba" @spcreate.sql
+You will be prompted for the PERFSTAT user's password, default tablespace, and temporary tablespace.
+
+This will create PERFSTAT user, statspack objects in it and STATSPACK package.
+
+NOTE: Default tablespace or temporary tablespace must not be SYSTEM for PERFSTAT user.
+
+The SPCREATE.SQL script runs the following scripts:
+
+    SPCUSR.SQL: Creates PERFSTAT user and grants privileges
+    SPCTAB.SQL: Creates STATSPACK tables
+    SPCPKG.SQL: Creates STATSPACK package
+
+Check the log files (created in present directory): spcusr.lis, spctab.lis and spcpkg.lis and ensure that no errors were encountered during the installation.
+
+To install statspack in batch mode, you must assign values to the SQL*Plus variables that specify the default and temporary tablespaces before running SPCREATE.SQL.
+
+    DEFAULT_TABLESPACE: For the default tablespace
+    TEMPORARY_TABLESPACE: For the temporary tablespace
+    PERFSTAT_PASSWORD: For the PERFSTAT user password
+
+$ sqlplus "/as sysdba"
+SQL> define default_tablespace='STATS'
+SQL> define temporary_tablespace='TEMP_TBS'
+SQL> define perfstat_password='perfstat'
+SQL> @?/rdbms/admin/spcreate
+
+When SPCREATE.SQL is run, it does not prompt for the information provided by the variables.
+
+Taking snapshots of the database
+Each snapshot taken is identified by a snapshot ID, which is a unique number generated at the time the snapshot is taken. Each time a new collection is taken, a new SNAP_ID is generated. The SNAP_ID, along with the database identifier (DBID) and instance number (INSTANCE_NUMBER), comprise the unique key for a snapshot. Use of this unique combination allows storage of multiple instances of an Oracle Real Application Clusters (RAC) database in the same tables.
+
+When a snapshot is executed, the STATSPACK software will sample from the RAM in-memory structures inside the SGA and transfer the values into the corresponding STATSPACK tables. Taking such a snapshot stores the current values for the performance statistics in the statspack tables. This snapshot can be used as a baseline for comparison with another snapshot taken at a later time.
+
+$ sqlplus perfstat/perfstat
+SQL> exec statspack.snap;
+or
+SQL> exec statspack.snap(i_snap_level=>10);
+instruct statspack to do gather more details in the snapshot.
+
+SQL> select name,snap_id,to_char(snap_time,'DD.MM.YYYY:HH24:MI:SS') "Date/Time" from stats$snapshot,v$database;
+
+
+Note that in most cases, there is a direct correspondence between the v$view in the SGA and the corresponding STATSPACK table.
+e.g. the stats$sysstat table is similar to the v$sysstat view.
+
+Remember to set timed_statistics to true for the instance. Statspack will then include important timing information in the data it collects.
+
+Note: In RAC environment, you must connect to the instance for which you want to collect data.
+
+Scheduling Snapshots gathering
+
+There are three methods to automate/schedule the gathering statspack snapshots/statistics.
+
+    SPAUTO.SQL - script can be customized and executed to schedule, a dbms_job to automate, and the collection of statspack snapshots.
+    DBMS_JOB procedure to schedule snapshots (you must set the initialization parameter JOB_QUEUE_PROCESSES to greater than 0).
+
+    BEGIN
+     SYS.DBMS_JOB.SUBMIT
+     (job => 999,
+      what => 'statspack.snap;',
+      next_date => to_date('17/08/2009 18:00:00','dd/mm/yyyy   hh24:mi:ss'),
+      interval => 'trunc(SYSDATE+1/24,''HH'')',
+      no_parse => FALSE
+     );
+    END;
+    /
+
+    Use an OS utility, such as cron.
+
+
+Statspack reporting
+The information captured by a STATSPACK snapshot has accumulated values. The information from the v$views collects database information at startup time and continues to add the values until the instance is shutdown. In order to get a meaningful elapsed-time report, you must run a STATSPACK report that compares two snapshots.
+
+After snapshots were taken, you can generate performance reports.
+SQL> connect perfstat/perfstat
+SQL> @?/rdbms/admin/spreport.sql
+
+When the report is run, you are prompted for the following:
+
+    The beginning snapshot ID
+    The ending snapshot ID
+    The name of the report text file to be created
+
+
+It is not correct to specify begin and end snapshots where the begin snapshot and end snapshot were taken from different instance startups. In other words, the instance must not have been shutdown between the times that the begin and end snapshots were taken.
+
+This is necessary because the database's dynamic performance tables, which statspack queries to gather the data, reside in memory. Hence, shutting down the Oracle database resets the values in the performance tables to 0. Because statspack subtracts the begin-snapshot statistics from the end-snapshot statistics, end snapshot will have smaller values than the begin snapshot, the resulting output is invalid and then the report shows an appropriate error to indicate this.
+
+
+To get list of snapshots
+SQL> select SNAP_ID, SNAP_TIME from STATS$SNAPSHOT;
+
+To run the report without being prompted, assign values to the SQL*Plus variables that specify the begin snap ID, the end snap ID, and the report name before running SPREPORT. The variables are:
+
+    BEGIN_SNAP: Specifies the begin snapshot ID
+    END_SNAP: Specifies the end snapshot ID
+    REPORT_NAME: Specifies the report output name
+
+
+
+SQL> connect perfstat
+SQL> define begin_snap=1
+SQL> define end_snap=2
+SQL> define report_name=batch_run
+SQL> @?/rdbms/admin/spreport
+When SPREPORT.SQL is run, it does not prompt for the information provided by the variables.
+
+
+The statspack package includes two reports.
+
+    Run statspack report, SPREPORT.SQL, which is general instance health report that covers all aspects of instance performance. This report calculates and prints ratios and differences for all statistics between the two snapshots, similar to the BSTAT/ESTAT report.
+    After examining the instance report, run SQL report, SPREPSQL.SQL, on a single SQL statement (identified by its hash value). The SQL report only reports on data relating to the single SQL statement.
+
+
+Adjusting Statspack collection level & threshold
+These parameters are used as thresholds when collecting data on SQL statements, data is captured on any SQL statements that breach the specified thresholds.
+
+Statspack has two types of collection options, level and threshold. The level parameter controls the type of data collected from Oracle, while the threshold parameter acts as a filter for the collection of SQL statements into the stats$sql_summary table.
+
+SQL> SELECT * FROM stats$level_description ORDER BY snap_level;
+
+
+Level 0	Captures general statistics, including rollback segment, row cache, buffer pool statistics, SGA, system events, background events, session events, system statistics, wait statistics, lock statistics, and latch information. 
+Level 5 (default)	Includes capturing high resource usage SQL Statements, along with all data captured by lower levels. 
+Level 6	Includes capturing SQL plan and SQL plan usage information for high resource usage SQL Statements, along with all data captured by lower levels. 
+Level 7	Captures segment level statistics, including logical and physical reads, row lock, ITL and buffer busy waits, along with all data captured by lower levels. 
+Level 10	Includes capturing parent & child latch statistics, along with all data captured by lower levels.
+
+You can change the default parameters used for taking snapshots so that they are tailored to the instance's workload.
+
+To temporarily use a snapshot level or threshold that is different from the instance's default snapshot values, you specify the required threshold or snapshot level when taking the snapshot. This value is used only for the immediate snapshot taken; the new value is not saved as the default.
+
+For example, to take a single level 6 snapshot:
+SQL> EXECUTE STATSPACK.SNAP(i_snap_level=>6);
+
+You can save the new value as the instance's default in either of two ways.
+Simply use the appropriate parameter and the new value with the statspack MODIFY_STATSPACK_PARAMETER or SNAP procedure.
+
+1) You can change the default level of a snapshot with the STATSPACK.SNAP function. The i_modify_parameter=>'true' changes the level permanent for all snapshots in the future.
+SQL> EXEC STATSPACK.SNAP(i_snap_level=>8, i_modify_parameter=>'true');
+
+Setting the I_MODIFY_PARAMETER value to TRUE saves the new thresholds in the STATS$STATSPACK_PARAMETER table. These thresholds are used for all subsequent snapshots.
+
+If the I_MODIFY_PARAMETER was set to FALSE or omitted, then the new parameter values are not saved. Only the snapshot taken at that point uses the specified values. Any subsequent snapshots use the preexisting values in the STATS$STATSPACK_PARAMETER table.
+
+2) Change the defaults immediately without taking a snapshot, using the STATSPACK.MODIFY_STATSPACK_PARAMETER procedure. For example, the following statement changes the snapshot level to 10 and modifies the SQL thresholds for BUFFER_GETS and DISK_READS:
+SQL> EXECUTE STATSPACK.MODIFY_STATSPACK_PARAMETER
+(i_snap_level=>10, i_buffer_gets_th=>10000, i_disk_reads_th=>1000);
+
+This procedure changes the values permanently, but does not take a snapshot.
+
+Snapshot level and threshold information used by the package is stored in the STATS$STATSPACK_PARAMETER table.
+
+Creating Execution Plan of an SQL
+When you examine the instance report, if you find high-load SQL statements that you want to examine more closely or if you have identified one or more problematic SQL statement, you may want to check the execution plan. The SQL statement to be reported on is identified by a hash value, which is a numerical representation of the statement's SQL text. The hash value for each statement is displayed for each statement in the SQL sections of the instance report. The SQL report, SPREPSQL.SQL, displays statistics, the complete SQL text, and (if level is more than six) information on any SQL plan(s) associated with that statement.
+
+$ sqlplus perfstat/perfstat
+SQL> @?/rdbms/admin/sprepsql.sql
+
+The SPREPSQL.SQL report prompts you for the following:
+
+    Beginning snapshot ID
+    Ending snapshot ID
+    Hash value for the SQL statement
+    Name of the report text file to be created
+
+
+The SPREPSQL.SQL script can run in batch mode. To run the report without being prompted, assign values to the SQL*Plus variables that specify the begin snap ID, the end snap ID, the hash value, and the report name before running the SPREPSQL.SQL script. The variables are:
+
+    BEGIN_SNAP: specifies the begin snapshot ID
+    END_SNAP: specifies the end snapshot ID
+    HASH_VALUE: specifies the hash value
+    REPORT_NAME: specifies the report output name
+
+
+
+SQL> connect perfstat
+SQL> define begin_snap=66
+SQL> define end_snap=68
+SQL> define hash_value=2342342385
+SQL> define report_name=sql_report
+SQL> @?/rdbms/admin/sprepsql
+When SPREPSQL.SQL is run, it does not prompt for the information provided by the variables.
+
+If you want to gather session statistics and wait events for a particular session (in addition to the instance statistics and wait events), specify the session ID in the call to statspack. The statistics gathered for the session include session statistics, session events, and lock activity. The default behavior is to not gather session level statistics.
+e.g.: SQL> exec statspack.snap(i_session_id=>333);
+
+Purging Statspack Data
+Purge unnecessary data from the PERFSTAT schema using the SPPURGE.SQL script. This deletes snapshots that fall between the begin and end snapshot IDs you specify.
+
+Purging can require the use of a large rollback segment, because all data relating to each snapshot ID will be deleted. You can avoid rollback segment extension errors in one of two ways:
+
+    Specify a smaller range of snapshot IDs to purge.
+    Explicitly use a large rollback segment, by executing the SET TRANSACTION USE ROLLBACK SEGMENT statement before running the SPPURGE.SQL script.
+
+
+SQL> connect perfstat/perfstat
+SQL> @?/rdbms/admin/sppurge
+When you run SPPURGE.SQL, it displays the instance to which you are connected and the available snapshots. It then prompts you for the low snap ID and high snap ID. All snapshots that fall within this range are purged.
+
+Running SPPURGE.SQL in batch mode
+SQL> connect perfstat/perfstat
+SQL> define losnapid=1
+SQL> define hisnapid=2
+SQL> @?/rdbms/admin/sppurge
+When SPPURGE.SQL is run, it does not prompt for the information provided by the variables.
+
+Note: Better to export the schema as backup before running this script, either using your own export parameters or those provided in SPUEXP.PAR.
+
+Truncating Statspack Data
+To truncate all performance data and gathered statistics data indiscriminately, use SPTRUNC.SQL.
+
+
+SQL> connect perfstat/perfstat
+SQL> @?/rdbms/admin/sptrunc.sql
+
+Note: Better to export the schema as backup before running this script, either using your own export parameters or those provided in SPUEXP.PAR.
+
+Uninstalling Statspack from Oracle Database
+If you want to remove the STATSPACK.
+$ sqlplus "/as sysdba"
+SQL> @?/rdbms/admin/spdrop.sql
+
+This script will drop statspack objects and the PERFSTAT user.
+The SPDROP.SQL script calls the following scripts:
+
+    SPDTAB.SQL - drops tables and public synonyms
+    SPDUSR.SQL - drops the user
+
+
+Check output files produced, in present directory, SPDTAB.LIS & SPDUSR.LIS, to ensure that the package was completely uninstalled.
+
+Problems in using Statspack
+Statspack reporting suffers from the following problems:
+1) Some statistics may only be reported on COMPLETION of a query. For example, if a query runs for 12 hours, its processing won't be reported during any of the snapshots taken while the query was busy executing.
+
+2) If queries are aged out of the shared pool, the stats from V$SQL are reset. This can throw off the delta calculations and even make it negative. For example, query A has 10,000 buffer_gets at snapshot 1, but at snapshot #2, it has been aged out of the pool and reloaded and now shows only 1,000 buffer_gets. So, when you run spreport.sql from snapshot 1 to 2, you'll get 1,000-10,000 = -9,000 for this query.
+
+Oracle Statspack Scripts
+
+Installation and Uninstallation
+The statspack installation and removal scripts must be run as a user with the SYSDBA privilege.
+
+    SPCREATE.SQL: Installs the statspack user (PERFSTAT), tables and package, by calling the following scripts:
+        SPCUSR.SQL: Creates statspack user (PERFSTAT), it’s objects and grants privileges.
+        SPCTAB.SQL: Creates statspack tables (run as PERFSTAT).
+        SPCPKG.SQL: Creates statspack package (run as PERFSTAT).
+    SPDROP.SQL: Uninstall statspack from database, by calling the following scripts:
+        SPDTAB.SQL: Drops statspack tables, synonyms, package.
+        SPDUSR.SQL: Drops statspack user (PERFSTAT).
+
+
+Upgrading Statspack
+The statspack upgrade scripts must be run as a user with the SYSDBA privilege.
+
+    SPUP102.SQL: Upgrading statspack to 11 schema.
+    SPUP10.SQL: Upgrading statspack to 10.2 schema.
+    SPUP92.SQL: Upgrading statspack to 10.1 schema.
+    SPUP90.SQL: Upgrading statspack to 9.2 schema.
+    SPUP817.SQL: Upgrading statspack from 8.1.7 to 9.0
+    SPUP816.SQL: Upgrading statspack from 8.1.6 to 8.1.7
+
+
+NOTE:
+1. Backup the existing schema before running the upgrade scripts.
+2. Downgrade scripts are not provided.
+3. Upgrade scripts should only be run once.
+
+Reporting and Automation
+The statspack reporting and automation scripts must be run as the PERFSTAT user.
+
+    SPREPORT.SQL: Generates a statspack report. Report on differences between values recorded in two snapshots. This calls SPREPINS.SQL.
+    SPREPSQL.SQL: StatsPack REPort SQL. Generates a statspack SQL report for the specific SQL hash value specified. This calls SPRSQINS.SQL.
+    SPREPINS.SQL: StatsPack REPort INStance. Generates a statspack report for the database and instance specified. This calls SPREPCON.SQL.
+    SPAUTO.SQL: Automates statspack statistics collection. Script can be customized and executed to schedule, a dbms_job to automate, and the collection of STATSPACK snapshots.
+    SPREPCON.SQL: StatsPack REPort CONfiguration. Allows configuration of certain aspects of the instance report.
+    SPRSQINS.SQL: StatsPack Report SQl Instance. Statspack SQL report to show resource usage, SQL Text and any SQL Plans. This calls SPREPCON.SQL.
+
+
+Performance Data Maintenance
+The statspack data maintenance scripts must be run as the PERFSTAT user.
+
+    SPPURGE.SQL: Purges a limited range of snapshot IDs for a given database instance.
+    SPTRUNC.SQL: Truncates all performance data in statspack tables.
+    Caution: Do not use this script unless you want to remove all data in the schema you are using. You can choose to export the data as a backup before using this script.
+    SPUEXP.PAR: An export parameter file supplied for exporting the whole PERFSTAT user.
+    $ exp file=spuexp.dmp log=spuexp.log compress=y grants=y indexes=y rows=y constraints=y owner=PERFSTAT consistent=y
+
+
+Statspack Documentation
+The SPDOC.TXT file in the $ORACLE_HOME/rdbms/admin directory contains instructions and documentation on the statspack package.
+
+Tables in PERFSTAT schema (in Oracle 11g)
+28 tables in Oracle8i
+68 tables in Oracle 10g
+73 tables in Oracle 11g
+
+
+STATS$BG_EVENT_SUMMARY
+STATS$BUFFER_POOL_STATISTICS
+STATS$BUFFERED_QUEUES
+STATS$BUFFERED_SUBSCRIBERS
+STATS$CR_BLOCK_SERVER
+STATS$CURRENT_BLOCK_SERVER
+STATS$DATABASE_INSTANCE
+STATS$DB_CACHE_ADVICE
+STATS$DLM_MISC
+STATS$DYNAMIC_REMASTER_STATS
+STATS$ENQUEUE_STATISTICS
+STATS$EVENT_HISTOGRAM
+STATS$FILE_HISTOGRAM
+STATS$FILESTATXS
+STATS$IDLE_EVENT
+STATS$INSTANCE_CACHE_TRANSFER
+STATS$INSTANCE_RECOVERY
+STATS$INTERCONNECT_PINGS
+STATS$IOSTAT_FUNCTION
+STATS$IOSTAT_FUNCTION_NAME
+STATS$JAVA_POOL_ADVICE
+STATS$LATCH
+STATS$LATCH_CHILDREN
+STATS$LATCH_MISSES_SUMMARY
+STATS$LATCH_PARENT
+STATS$LEVEL_DESCRIPTION
+STATS$LIBRARYCACHE
+STATS$MEMORY_DYNAMIC_COMPS
+STATS$MEMORY_RESIZE_OPS
+STATS$MEMORY_TARGET_ADVICE
+STATS$MUTEX_SLEEP
+STATS$OSSTAT
+STATS$OSSTATNAME
+STATS$PARAMETER
+STATS$PGA_TARGET_ADVICE
+STATS$PGASTAT
+STATS$PROCESS_MEMORY_ROLLUP
+STATS$PROCESS_ROLLUP
+STATS$PROPAGATION_RECEIVER
+STATS$PROPAGATION_SENDER
+STATS$RESOURCE_LIMIT
+STATS$ROLLSTAT
+STATS$ROWCACHE_SUMMARY
+STATS$RULE_SET
+STATS$SEG_STAT
+STATS$SEG_STAT_OBJ
+STATS$SESS_TIME_MODEL
+STATS$SESSION_EVENT
+STATS$SESSTAT
+STATS$SGA
+STATS$SGA_TARGET_ADVICE
+STATS$SGASTAT
+STATS$SHARED_POOL_ADVICE
+STATS$SNAPSHOT
+STATS$SQL_PLAN
+STATS$SQL_PLAN_USAGE
+STATS$SQL_STATISTICS
+STATS$SQL_SUMMARY
+STATS$SQL_WORKAREA_HISTOGRAM
+STATS$SQLTEXT
+STATS$STATSPACK_PARAMETER
+STATS$STREAMS_APPLY_SUM
+STATS$STREAMS_CAPTURE
+STATS$STREAMS_POOL_ADVICE
+STATS$SYS_TIME_MODEL
+STATS$SYSSTAT
+STATS$SYSTEM_EVENT
+STATS$TEMP_SQLSTATS
+STATS$TEMPSTATXS
+STATS$THREAD
+STATS$TIME_MODEL_STATNAME
+STATS$UNDOSTAT
+STATS$WAITSTAT
