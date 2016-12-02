@@ -28,6 +28,8 @@ SQL> define temporary_tablespace='TEMP_TBS'
 SQL> define perfstat_password='perfstat'
 SQL> @?/rdbms/admin/spcreate
 
+spcpkg.sql
+
 When SPCREATE.SQL is run, it does not prompt for the information provided by the variables.
 
 Taking snapshots of the database
