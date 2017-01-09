@@ -1,0 +1,118 @@
+Creating Database Using DBCA Silent Mode
+
+To create a database using silent mode you need to pass in the keyword “silent” as an argument to DBCA command. The other options like password for SYS and SYSTEM, which template to use and where to put data files etc. are also provided to the DBCA as an argument.
+
+Most of the options are optional and you can skip them. But if you miss the mandatory option the DBCA command line will ask for their values before creating database.
+
+Below is an explanation for some of the parameters which we will be used to create a database.
+
+-Silent
+
+Will instruct the database configuration assistant to run in silent mode
+
+-CreateDatabase
+
+The argument will instruct the DBCA to create a database.
+
+-TemplateName
+
+The argument will specify the template that DBCA should use to create the database. Advantage of specifying a template is that you don’t have to specify the many other options like data file and control file locations.
+
+The Database configuration assistant will get those values from the template. Although you can change the defaults of template during the initial steps.
+
+-gdbname
+
+The global database name is provided using this argument.
+
+-sid
+
+The database instance name which will be created and started as part of process.
+
+-responseFile
+
+You can also create a response file.
+
+-characterSet
+
+The character set that the newly created database will be using.
+
+-memoryPercentage
+
+The argument will specify the percentage of total memory that can be use by Oracle SGA and PGA combined.
+
+-emConfiguration
+
+Whether the database should be configured to use Enterprise Manager or not. Valid config types are LOCAL, CENTRAL, NOBACKUP, NOEMAIL, and NONE.
+
+Now that you have an idea of what options are available you can use the commands below to create the database in silent mode.
+$ echo $ORACLE_BASE
+/u01/app/oracle
+$ echo $ORACLE_HOME
+/u01/app/oracle/product/11.2.0/dbhome_1
+$ dbca -silent -createDatabase -templateName General_Purpose.dbc -gdbname dbase -sid dbase -responseFile NO_VALUE -characterSet AL32UTF8 -memoryPercentage 20 -emConfiguration NONE
+Enter SYS user password:
+
+Enter SYSTEM user password:
+
+Copying database files
+1% complete
+3% complete
+11% complete
+18% complete
+26% complete
+37% complete
+Creating and starting Oracle instance
+40% complete
+45% complete
+50% complete
+55% complete
+56% complete
+60% complete
+62% complete
+Completing Database Creation
+66% complete
+70% complete
+73% complete
+85% complete
+96% complete
+100% complete
+Look at the log file "/u01/app/oracle/cfgtoollogs/dbca/dbase/dbase.log" for further details.
+
+The database has been created and started successfully.
+Verify Database Creation
+
+To verify that database has been created and is up and running you can use the following commands after logging in using SYS.
+$ export ORACLE_SID=dbase
+$ echo $ORACLE_SID
+dbase
+$ sqlplus / as sysdba
+
+SQL*Plus: Release 11.2.0.3.0 Production on Sat Apr 27 22:31:37 2013
+
+Copyright (c) 1982, 2011, Oracle. All rights reserved.
+Connected to:
+Oracle Database 11g Enterprise Edition Release 11.2.0.3.0 - Production
+With the Partitioning, OLAP, Data Mining and Real Application Testing options
+
+SQL> select instance_name from v$instance;
+
+INSTANCE_NAME
+----------------
+dbase
+
+SQL> select name from v$datafile;
+
+NAME
+----------------------------------------------
+/u01/app/oracle/oradata/dbase/system01.dbf
+/u01/app/oracle/oradata/dbase/sysaux01.dbf
+/u01/app/oracle/oradata/dbase/undotbs01.dbf
+/u01/app/oracle/oradata/dbase/users01.dbf
+
+SQL> select name from v$tempfile;
+
+NAME
+----------------------------------------------
+/u01/app/oracle/oradata/dbase/temp01.dbf
+3
+Share
