@@ -115,4 +115,52 @@ NAME
 ----------------------------------------------
 /u01/app/oracle/oradata/dbase/temp01.dbf
 3
-Share
+
+
+
+dbca -createDatabase 
+    -templateName template_name 
+    [-cloneTemplate] 
+    -gdbName global_database_name 
+    [-sid database_system_identifier]
+    [-createAsContainerDatabase {true | false}
+        [-numberOfPDBs integer]
+        [-pdbName pdb_name]]
+    [-sysPassword sys_user_password]
+    [-systemPassword system_user_password]
+    [-emConfiguration {DBEXPRESS | CENTRAL | BOTH | NONE}
+       -dbsnmpPassword DBSNMP_user_password
+       [-omsHost EM_management_server_host_name
+       -omsPort EM_management_server_port_number
+       -emUser EM_admin_username
+       -emPassword EM_admin_user_password]]
+    [-dvConfiguration {true | false}
+        -dvUserName Database_Vault_owner_username
+        -dvUserPassword Database_Vault_owner_password
+        -dvAccountManagerName Database_Vault_account_manager
+        -dvAccountManagerPassword Database_Vault_account_manager_password]
+    [-olsConfiguration {true | false}]
+    [-datafileDestination directory | -datafileNames text_file_location]
+    [-redoLogFileSize integer]
+    [-recoveryAreaDestination destination_directory]
+    [-datafileJarLocation jar_file_location]
+    [-storageType {FS | ASM} 
+        [-asmsnmpPassword asmsnmp_password]
+        -diskGroupName disk_group_name
+        -recoveryGroupName recovery_area_disk_group_name]
+    [-characterSet database_character_set]
+    [-nationalCharacterSet database_national_character_set]
+    [-registerWithDirService {true | false} 
+         -dirServiceUserName directory_service_user_name
+         -dirServicePassword directory_service_password
+         -walletPassword wallet_password]
+    [-listeners list_of_listeners]
+    [-variablesFile variable_file]
+    [-variables variable_list]
+    [-initParams parameter_list]
+    [-sampleSchema {true | false}]
+    [-memoryPercentage integer]
+    [-automaticMemoryManagement {true | false}]
+    [-totalMemory integer]
+    [-databaseType {MULTIPURPOSE | DATA_WAREHOUSING | OLTP}]
+    -serviceUserPassword Windows_Oracle_Home_service_user_password
