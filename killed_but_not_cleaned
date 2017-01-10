@@ -1,0 +1,45 @@
+ Session status is KILLED but no cleanup
+Today morning I killed some sessions which were INACTIVE for very long time (select * from v$session where LAST_CALL_ET/(60*60*24) > 1000) which was demanded by our application admin.
+
+I killed those session and those sessions were marked KILLED (STATUS field of v$session). After 5 hours i checked those session again and found that those are still in v$session and status='KILLED'.
+
+Then I used a query, joining v$session(paddr) with v$process(addr) to find OS process id(v$process.spid), but no rows were returned.
+Then, checked v$transaction view to check whether any rollback is going on-
+
+select s.sid,
+s.program,
+t.status as transaction_status,
+s.status as session_status,
+s.lockwait,
+s.pq_status,
+t.used_ublk as undo_blocks_used,
+decode(bitand(t.flag, 128), 0, 'NO', 'YES') rolling_back
+from v$session s, v$transaction t
+where s.taddr = t.addr;
+
+But there was no rollback going on.
+After that I used below query to find status of waiting session-
+
+select *
+from v$session_wait
+where sid in (select sid
+from v$session
+where username = 'USERNAME'
+and status = 'KILLED');
+
+This time I found my sessions in waiting state with wait_time=0, so, oracle is waithing for instructions from user/clients and I have to stop/kill client program/process.
+But there was no corresponding row for those killed session in v$process (as paddr in v$session has been changed after those session and sessions were in waiting state).
+
+So, I used below query to find and kill any unwanted process which don't have any corresponding entry in v$session-
+
+SELECT spid
+FROM v$process a
+WHERE NOT EXISTS (SELECT 1 FROM v$session b WHERE b.paddr = a.addr);
+
+I knew that I am using DEDICATED server, killing one process no impact on other (as no one is sharing that session). I also knew that those session were connected using TNS from remote machine.
+So, before killing each process, I checked with `ps -ef|grep ` and if I found LOCAL=NO, then I killed the process.
+After killing every process I waited for a while and checked in v$session fir one of KILLED session had been gone.
+
+http://www.lazydba.com/oracle/0__4714.html
+http://oracleunix.wordpress.com/2006/08/06/alter-system-kill-session-marked-for-killed-forever/
+http://forums.oracle.com/forums/thread.jspa?threadID=695018
