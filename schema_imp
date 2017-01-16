@@ -1,0 +1,6 @@
+impdp system/<password> SCHEMAS=user1 remap_schema=user1:user2 \
+            remap_tablespace=user1:user2 directory=EXPORTDIR \
+            dumpfile=user1.dmp logfile=E:\Data\user1.log
+            
+            create or replace directory EXPORTDIR as 'E:\Data';
+grant read, write on directory EXPORTDIR to user2;
