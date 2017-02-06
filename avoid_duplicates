@@ -1,0 +1,48 @@
+How to compare two columns to find duplicates in Excel
+
+In this tutorial I will show you how to compare two columns in Excel so that the values that appear in both columns become highlighted and you can do something with those duplicate values.
+Find duplicate values in two columns
+
+1. Click on the Column Header to highlight Column A.
+Highlight column A by clicking the column header
+Highlight column A by clicking the column header
+
+2. Select the Conditional Formatting button on the Home tab.
+Select the Conditional Formatting button under the Home tab
+Select the Conditional Formatting button under the Home tab
+
+3. Select the New Rule option from the Conditional Formatting button drop-down list.
+Select New Rule from the Conditional Formatting drop-down list
+Select New Rule from the Conditional Formatting drop-down list
+
+4. Select ‘Use a formula to determine which cells to format‘ as a rule in the New Formatting Rule window.
+Select the 'Use a formula to determine which cells to format' option
+Select the ‘Use a formula to determine which cells to format’ option
+
+5. Proceed by entering the following formula in the ‘Format values where this formula is true‘ box:
+
+=countif($B:$B, $A1)
+Enter the formula provided in the text box
+Enter the formula provided in the text box
+
+6. Click on the Format button and specify the format you want to set.
+Click on the Format button
+Click on the Format button
+
+It is possible to set a different cell color for duplicate values by clicking the Fill tab and selecting a background color.
+Change the cell color by clicking on the Fill tab and selecting a color
+Change the cell color by clicking on the Fill tab and selecting a color
+
+7. After having specified the format you want click OK.
+
+You will be redirected back to the New Formatting Rule window and will be given a preview of the formatting you have selected. If you are happy with the formatting you have specified click OK.
+
+The conditional formatting rule then will be applied to all values of the column and should look like this.
+Preview of workbook after Conditional Formatting has been set
+Preview of workbook after Conditional Formatting has been set
+
+Note how the values of the highlighted cells in Column A are repeated in Column B. I have manually highlighted the cells with identical values in Column B green for demonstrative purposes.
+Demonstration of how repeated values are highlighted
+Demonstration of how repeated values are highlighted
+
+So this is how you can easily see which values are duplicate in different columns in Excel.
