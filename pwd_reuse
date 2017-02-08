@@ -1,0 +1,4 @@
+select * from dba_profiles where profile='DBUSER' and  RESOURCE_NAME in ('PASSWORD_REUSE_TIME') ;
+alter profile DBUSER limit PASSWORD_REUSE_TIME UNLIMITED;
+alter user BACMONIT IDENTIFIED BY VALUES 'xxxxxxx';
+alter profile DBUSER limit PASSWORD_REUSE_TIME 360;
