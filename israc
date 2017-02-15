@@ -1,0 +1,13 @@
+select
+   name,
+   value
+from
+   v$parameter
+where
+   name='cluster_database'; 
+   
+ 
+ select * from v$session where type ='BACKGROUND';
+ 
+ 
+ rac-1a:NYDB1:/app/home/oracle >ps -ef | grep lck
