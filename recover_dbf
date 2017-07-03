@@ -1,0 +1,174 @@
+ RMAN: Recovering from a Missing or Corrupt Datafile
+Filed under: Oracle,RMAN — Vikram @ 6:07 pm
+Tags: ORA-00376, ORA-01110, Oracle, Recovery, RMAN
+
+While DB Backup management is a very important task for a DBA, it is the Recovery that calls for the crisis management. Almost always at times of DB recovery, the DBA is in pressure to bring the DB back to normal with minimum resource loss. The client expects minimum data loss, minimum time loss. It is advisable for the DBAs to be well-equipped with the most common recovery scenarios in such times. Let’s use RMAN for various recovery scenarios over a few subsequent posts. Let’s also review a few good practices on our way to recovery.
+
+Let’s begin with recovering from a lost or corrupted datafile when the backup is in tact and the DB is open.
+RMAN: Recovering from a lost datafile
+
+Any kind of recovery needs a few very basic steps:
+
+1) Checking the availability of valid backup
+2) Deciding upon the recovery procedure
+3) Actual recovery
+
+The Scenario
+Before we begin on the recovery procedure, let’s appraise the scenario. One of the datafile in a DB is lost or corrupt. The database is in OPEN state and, fortunately, the backups are in place. Of course, the first thing we will do is to confirm that the backups are indeed available. The backups were taken using RMAN.
+
+TIP: A good backup plan is always very essential for the Database. Every DBA has to give enough thought to the backup plan and decide what is good for his organization.
+
+In our case the datafile users01.dbf was missing from the database. The tablespace was USERS and this had a single datafile. The queries on the objects in that datafile were erroring out with the below ORA-01110 error. This error was accompanied by ORA-00376.
+
+    SQL> select owner, segment_name from dba_segments where tablespace_name='USERS' and segment_name='BONUS';
+    OWNER                          SEGMENT_NAME
+    ------------------------------ ---------------------------------------------------------------------------------
+    SCOTT                          BONUS 
+
+    SQL> select count(1) from scott.bonus;
+    select count(1) from scott.bonus
+    *
+    ERROR at line 1:
+    ORA-00376: file 4 cannot be read at this time
+    ORA-01110: data file 4: 'D:\VIKRAM\ORADATA\TEST2\USERS01.DBF'
+
+Moreover, when I queried the V$DATAFILE_HEADER view the error seen was:
+
+    SQL> SELECT FILE#, STATUS, ERROR, RECOVER, TABLESPACE_NAME, NAME
+    2  FROM V$DATAFILE_HEADER
+    3  WHERE RECOVER = 'YES' OR (RECOVER IS NULL AND ERROR IS NOT NULL);
+    FILE#      STATUS  ERROR                     REC TABLESPACE_NAME                NAME
+    ---------- ------- ------------------------- --- ------------------------------ ----------
+    4          OFFLINE FILE NOT FOUND
+
+The ERROR column shows file not found. Additionally, we may also run dbv utility on all the datafiles to uncover underlying datafile corruption.
+
+So, this was the situation when it was decided to recover this datafile from backup. The DB was, as already mentioned, in OPEN state. The DB can as well be in the MOUNT state to perform this procedure. But, it isn’t necessary. Making the Datafile offline will be sufficient to carry out the recovery procedure.
+
+Checking the Availability of the Backup
+The first step in any recovery procedure is to confirm the availability of the complete set of backup. By complete set I mean all the files required for the recovery. This is called the Redundancy Set. The set of files needed to recover an Oracle database from the failure of any of its files – a datafile, a control file, or online redo log – is called the redundancy set.
+
+After connecting to RMAN we can confirm if our backup is good enough to restore the missing datafile. The below command lists out the backup piece required to restore the datafile (in our case datafile number 4 is the missing datafile). We should immediately look for this backup piece’s availability.
+
+    RMAN> restore datafile 4 preview;
+    Starting restore at 24-MAR-09
+    using channel ORA_DISK_1
+    List of Backup Sets
+    ===================
+    BS Key  Type LV Size       Device Type Elapsed Time Completion Time
+    ------- ---- -- ---------- ----------- ------------ ---------------
+    4       Full    591.91M    DISK        00:01:51     24-MAR-09
+    BP Key: 4   Status: AVAILABLE  Compressed: NO  Tag: TAG20090324T143340
+    Piece Name: D:\VIKRAM\FLASH_RECOVERY_AREA\TEST2\BACKUPSET\2009_03_24
+                   \O1_MF_NNNDF_TAG20090324T143340_4WL9W61M_.BKP
+    List of Datafiles in backup set 4
+    File LV Type Ckp SCN    Ckp Time  Name
+    ---- -- ---- ---------- --------- ----
+    4       Full 578065     24-MAR-09 D:\VIKRAM\ORADATA\TEST2\USERS01.DBF
+    archive logs generated after SCN 578065 not found in repository
+    Media recovery start SCN is 578065
+    Recovery must be done beyond SCN 578065 to clear data files fuzziness
+    Finished restore at 24-MAR-09
+
+From the above snapshot it is evident that the backup-piece required is O1_MF_NNNDF_TAG20090324T143340_4WL9W61M_.BKP. It also tells us that the archives beyond the SCN 578065 are required to clear the datafile’s fuzziness.
+
+Next thing we got to do is to confirm that the archives are in place until atleast the required SCN reported by the above command. In this case, we need archives until atleast SCN 578065. Let’s check if the required archives are available.
+
+    RMAN> list backup of archivelog all;
+    List of Backup Sets
+    ===================
+    BS Key  Size       Device Type Elapsed Time Completion Time
+    ------- ---------- ----------- ------------ ---------------
+    3       2.26M      DISK        00:00:02     24-MAR-09
+    BP Key: 3   Status: AVAILABLE  Compressed: NO  Tag: TAG20090324T142932
+    Piece Name: D:\VIKRAM\FLASH_RECOVERY_AREA\TEST2\BACKUPSET\2009_03_24
+                   \O1_MF_ANNNN_TAG20090324T142932_4WL9NMFX_.BKP
+    List of Archived Logs in backup set 3
+    Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+    ---- ------- ---------- --------- ---------- ---------
+    1    3       574556     24-MAR-09 577816     24-MAR-09
+    BS Key  Size       Device Type Elapsed Time Completion Time
+    ------- ---------- ----------- ------------ ---------------
+    5       2.26M      DISK        00:00:03     24-MAR-09
+    BP Key: 5   Status: AVAILABLE  Compressed: NO  Tag: TAG20090324T143340
+    Piece Name: D:\VIKRAM\FLASH_RECOVERY_AREA\TEST2\BACKUPSET\2009_03_24
+                    \O1_MF_ANNNN_TAG20090324T143340_4WL9ZSRZ_.BKP
+    List of Archived Logs in backup set 5
+    Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+    ---- ------- ---------- --------- ---------- ---------
+    1    3       574556     24-MAR-09 577816     24-MAR-09
+
+The above snapshot shows two backupsets for archivelogs. Backupset with key 5 has the entries until SCN 577816. Not good. We need archives until SCN 578065. So, the archivelogs we have are not sufficient for the backup. We must locate the archive logs or redo logs beyond the SCN 577816 and upto 578065. Let’s look for redo for sequence numbers beyond 3. (it is 3 because the above Backupset with key 5 has archive logs until Sequence 3).
+
+The below command shows the SCN contained in the redo log files. The Thread 1, Sequence 5 has changes until 584110. The redo log file with sequence 4 has the changes until 574556 which is not sufficient in our case. We will need redo logs until sequence 5 for recovery.
+
+    SQL> select * from v$log;
+        GROUP#    THREAD#  SEQUENCE#      BYTES    MEMBERS ARC STATUS           FIRST_CHANGE# FIRST_TIM
+    ---------- ---------- ---------- ---------- ---------- --- ---------------- ------------- ---------
+             1          1          5   52428800          1 NO  CURRENT                 584110 24-MAR-09
+             2          1          3   52428800          1 YES INACTIVE                574556 24-MAR-09
+             3          1          4   52428800          1 YES ACTIVE                  577816 24-MAR-09
+
+This confirms the availability of all the required archives for recovery in our case.
+
+Once the required backup is in place, it is very easy to recover from any critical situation in Oracle. Let’s begin the recovery.
+
+The Procedure
+Recovery can be complete or incomplete. A complete recovery has no data loss whereas an incomplete recovery has some data loss. An incomplete recovery is accompanied by RESETLOGS. An incomplete recovery is necessary when some or all of the data is unavailable to recover the object from its restore point to the point of dataloss. An object here could be a datafile, tablespace, or database. Restore point here is the point until where the DB has been restored to using the backup, and to make the DB current until the point of object loss we will need recovery to be performed. Recovery requires availability of archived and online redo logs. If the archived logs or redo logs are missing, then incomplete recovery is the only option. We may have to use RECOVER…UNTIL TIME option for point-in-time recovery of the missing object. (more on the point-in-time recovery in future posts).
+
+In our case, since we have all the required archives we will perform a complete recovery. There is no data loss in this recovery procedure. The DB can remain in MOUNT or OPEN state during this procedure. Only the datafile will be made offline during the restore/recovery operation if the DB is in OPEN state.
+
+The Recovery Itself
+Since all the backups are available, the actual recovery procedure is quite simple.
+
+Connect to RMAN and issue the below statements:
+
+    RUN {
+    SQL ‘ALTER TABLESPACE users OFFLINE IMMEDIATE’;
+    RESTORE TABLESPACE users;
+    RECOVER TABLESPACE users;
+    SQL ‘ALTER TABLESPACE users ONLINE’;
+    }
+
+The snapshot of the same, in my DB, is below. In my snapshot, the ALTER TABLESPACE users ONLINE statement is missing. I wanted to confirm that the RECOVER TABLESPACE command runs successfully before bringing the tablespace online. I ran the ONLINE tablespace command later at the end.
+Also note that this RMAN command OFFLINE’s and ONLINE’s the entire tablespace. Since in our case this tablespace had only one datafile (which was missing), it wont much matter OFFLINE’ing the tablespace or datafile. If we had more than one datafile in this tablespace and one among those datafiles was missing or corrupt, we would OFFLINE only that datafile instead of the entire tablespace. The command is ‘ALTER DATABASE DATAFILE <file_num> OFFLINE’.
+
+    RMAN>  RUN {
+    2> SQL 'ALTER TABLESPACE users OFFLINE IMMEDIATE';
+    3> RESTORE TABLESPACE users;
+    4> RECOVER TABLESPACE users;
+    5> }
+    sql statement: ALTER TABLESPACE users OFFLINE IMMEDIATE
+    Starting restore at 24-MAR-09
+    using channel ORA_DISK_1
+    channel ORA_DISK_1: starting datafile backupset restore
+    channel ORA_DISK_1: specifying datafile(s) to restore from backup set
+    restoring datafile 00004 to D:\VIKRAM\ORADATA\TEST2\USERS01.DBF
+    channel ORA_DISK_1: reading from backup piece D:\VIKRAM\FLASH_RECOVERY_AREA\TEST2
+                  \BACKUPSET\2009_03_24\O1_MF_NNNDF_TAG20090324T143340_4WL9W61M_.BKP
+    channel ORA_DISK_1: restored backup piece 1
+    piece handle=D:\VIKRAM\FLASH_RECOVERY_AREA\TEST2\BACKUPSET\2009_03_24
+                   \O1_MF_NNNDF_TAG20090324T143340_4WL9W61M_.BKP tag=TAG20090324T143340
+    channel ORA_DISK_1: restore complete, elapsed time: 00:00:04
+    Finished restore at 24-MAR-09
+    Starting recover at 24-MAR-09
+    using channel ORA_DISK_1
+    starting media recovery
+    media recovery complete, elapsed time: 00:00:07
+    Finished recover at 24-MAR-09
+
+The recovery is complete successfully. We don’t see any errors reported. Now we ONLINE the tablespace as below:
+
+    RMAN> SQL 'ALTER TABLESPACE users ONLINE';
+    sql statement: ALTER TABLESPACE users ONLINE
+
+This completes the recovery of the missing datafile. After this, the command (which errored out earlier) will run successfully:
+
+    SQL> select count(1) from scott.bonus;
+    COUNT(1)
+    ----------
+    0
+
+Let me know in case you find any issues following this procedure and I will assist you.
+
+Please leave a comment if this post was helpful to you or if you have any suggestions or advice to make these posts more informative.
