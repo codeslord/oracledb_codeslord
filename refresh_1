@@ -1,0 +1,227 @@
+
+Bulk refresh of test DB environments using RMAN backup based duplication
+
+May 7, 2012 by Nakinov · 6 Comments 
+
+I don’t know about you folks, but the most boring & time consuming task is always refreshing test environments. If you are working on a billing migration project, than it is a common practice to refresh test, dev, uat and migration databases every 2 weeks. In this case there is a recent RMAN backup of a database named CBIO01 that needs to be restored over 15+ databases (which are not created) and I am going to clone existing RMAN backup like in the previous post
+
+http://database.com.mk/wordpress/2011/08/05/rman-backup-based-duplication-without-a-target-and-without-a-recovery-catalog-connection/
+
+To accomplish this task, I have three staging files:
+
+1) “initSTAGING.ora” – baseline init.ora parameter for the new databases
+2) “duplicate_CBIO01_to_ORACLE_STAGING_SID.rmn” – RMAN parameter file used to create a clone/create new database from a previous backup
+3) “run_duplicate_CBIO01_to_ORACLE_STAGING_SID.sh” – Shell script that starts RMAN duplicate database
+
+Before creating a new database, ORACLE_STAGING_SID and ORACLE_SID should be set to the desired new DB name that we are about to create.
+1
+2
+	
+$ export ORACLE_STAGING_SID=TESTDB
+$ export ORACLE_SID=$ORACLE_STAGING_SID
+
+Create folders that are being used by init.ora for the new DB that we are creating. In this case, I am about to clone existing DB backup into a mount point /u03/.
+1
+2
+	
+$ mkdir -p /u01/app/oracle/admin/$ORACLE_STAGING_SID/adump
+$ mkdir -p /u03/$ORACLE_STAGING_SID/
+
+Next, using SED I will replace the string “_ORACLE_STAGING_SID_” with the previously exported $ORACLE_STAGING_SID in all three staging files and generate 3 new.
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+	
+$ sed -e "s/_ORACLE_STAGING_SID_/$ORACLE_STAGING_SID/g" initSTAGING.ora > init$ORACLE_STAGING_SID.ora
+$ sed -e "s/_ORACLE_STAGING_SID_/$ORACLE_STAGING_SID/g" duplicate_CBIO01_to_ORACLE_STAGING_SID.rmn > duplicate_CBIO01_to_$ORACLE_STAGING_SID.rmn
+$ sed -e "s/_ORACLE_STAGING_SID_/$ORACLE_STAGING_SID/g" run_duplicate_CBIO01_to_ORACLE_STAGING_SID.sh > run_duplicate_CBIO01_to_$ORACLE_STAGING_SID.sh
+$ chmod 755 run_duplicate_CBIO01_to_$ORACLE_STAGING_SID.sh
+$ cp init$ORACLE_STAGING_SID.ora $ORACLE_HOME/dbs
+$ alias rmanlog='tail -f /u03/nakinov/00.rman/03.duplicate/duplicate_CBIO01_to_$ORACLE_STAGING_SID.log'
+$ alias dud='du -sk /u03/$ORACLE_STAGING_SID/'
+ 
+$ sqlplus /nolog 2>&1 << EOF
+startup nomount;
+exit;
+EOF
+
+The results of the above statements will be three new files:
+
+– initTESTDB.ora
+– duplicate_CBIO01_to_TESTDB.rmn
+– run_duplicate_CBIO01_to_TESTDB.sh
+
+To start the RMAN restore/clone simply execute the shell script and monitor the progress of RMAN clone.
+1
+2
+3
+4
+5
+	
+# Duplicate database
+$ nohup time ./run_duplicate_CBIO01_to_TESTDB.sh &
+ 
+# Monitor progress of RMAN
+$ rmanlog
+
+Contents of initSTAGING.ora
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+	
+*.audit_file_dest='/u01/app/oracle/admin/_ORACLE_STAGING_SID_/adump'
+*.audit_trail='none'
+*.compatible='11.2.0.0.0'
+*.control_files='/u03/_ORACLE_STAGING_SID_/control01.ctl','/u03/_ORACLE_STAGING_SID_/control02.ctl'
+*.db_block_size=8192
+*.db_domain=''
+*.db_files=600
+*.db_name='_ORACLE_STAGING_SID_'
+*.diagnostic_dest='/u01/app/oracle'
+*.dispatchers='(PROTOCOL=TCP) (SERVICE=_ORACLE_STAGING_SID_XDB)'
+*.large_pool_size=33554432
+*.open_cursors=500
+*.optimizer_index_cost_adj=25
+*.pga_aggregate_target=4194304000
+*.processes=1000
+*.remote_login_passwordfile='EXCLUSIVE'
+*.sec_case_sensitive_logon=FALSE
+*.sessions=1105
+*.sga_target=4194304000
+*.undo_tablespace='UNDOTBS1'
+
+Contents of duplicate_CBIO01_to_ORACLE_STAGING_SID.rmn
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+	
+run {
+ 
+        set newname for datafile 1 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_all_01.dbf';
+        set newname for datafile 2 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_all_02.dbf';
+        set newname for datafile 3 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_all_03.dbf';
+        set newname for datafile 4 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_all_04.dbf';
+        set newname for datafile 5 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_all_05.dbf';
+        set newname for datafile 6 to '/u03/_ORACLE_STAGING_SID_/bscs_contract_service_01.dbf';
+         
+        set newname for tempfile 1 to '/u03/_ORACLE_STAGING_SID_/temp_01.dbf';
+ 
+        allocate auxiliary channel c1 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';  
+        allocate auxiliary channel c2 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';  
+        allocate auxiliary channel c3 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';  
+        allocate auxiliary channel c4 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';  
+        allocate auxiliary channel c5 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';  
+        allocate auxiliary channel c6 type disk format '/u03/backup/rman/cbio01_d2_22032012/cbio01_d2_%p_%s_%T.bkp';
+     
+         duplicate database to _ORACLE_STAGING_SID_
+         pfile=/u01/app/oracle/product/11.2.0.3/db_1/dbs/init_ORACLE_STAGING_SID_.ora
+         backup location='/u03/backup/rman/cbio01_d2_22032012/'
+                logfile group 1 ('/u03/_ORACLE_STAGING_SID_/redo01.log') size 300M reuse,
+                        group 2 ('/u03/_ORACLE_STAGING_SID_/redo02.log') size 300M reuse,
+                        group 3 ('/u03/_ORACLE_STAGING_SID_/redo03.log') size 300M reuse;
+ 
+        release channel c1;
+        release channel c2;
+        release channel c3;
+        release channel c4;
+        release channel c5;
+        release channel c6;
+ 
+}
+ 
+exit;
+
+Contents of run_duplicate_CBIO01_to_ORACLE_STAGING_SID.sh
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+	
+#!/usr/bin/bash
+ 
+# TODO: Before running this script
+# sqlplus /nolog
+# conn / as sysdba
+# shutdown immediate
+# startup mount
+ 
+export ORACLE_HOME=/u01/app/oracle/product/11.2.0.3/db_1
+export NLS_LANG=AMERICAN_AMERICA.WE8ISO8859P15
+export ORACLE_SID=_ORACLE_STAGING_SID_ 
+ 
+rman auxiliary / nocatalog cmdfile=duplicate_CBIO01_to__ORACLE_STAGING_SID_.rmn log=duplicate_CBIO01_to__ORACLE_STAGING_SID_.log
+ 
+#
+# End of script
+#

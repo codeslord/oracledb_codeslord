@@ -1,0 +1,469 @@
+Step By Step Guide On Creating Physical Standby Using RMAN(ASM)
+
+
+This article explains steps to create physical standby database using Oracle Database 11g RMAN  FROM ACTIVE DATABASE capability to the DUPLICATE FOR STANDBY command.
+
+Primary database Name:primdv1
+
+Standby database Name:stbydv1
+
+Step1)Make sure primary database is running in archive log mode.
+
+2)Determine if FORCE LOGGING is enabled. If it is not enabled, enable FORCE LOGGING mode.
+SQL> SELECT force_logging FROM v$database;
+
+FOR
+—
+NO
+
+SQL> ALTER DATABASE FORCE LOGGING;
+
+Database altered.
+
+SQL> SELECT force_logging FROM v$database;
+
+FOR
+—
+YES
+
+3)Configure the primary database to receive redo data, by adding the standby logfiles to the primary
+It is highly recommended that you have one more standby redo log group than you have online redo log groups as the primary database.
+The files must be the same size or larger than the primary database’s online redo logs.
+
+ALTER DATABASE ADD STANDBY LOGFILE
+‘+DATA1/primdv1/srl01.log’
+SIZE 52428800
+/
+
+ALTER DATABASE ADD STANDBY LOGFILE
+‘+DATA1/primdv1/srl02.log’
+SIZE 52428800
+/
+
+ALTER DATABASE ADD STANDBY LOGFILE
+‘+DATA1/primdv1/srl03.log’
+SIZE 52428800
+/
+
+ALTER DATABASE ADD STANDBY LOGFILE
+‘+DATA1/primdv1/srl04.log’
+SIZE 52428800
+/
+
+4)Set primary database initialization parameters
+
+ALTER SYSTEM SET log_archive_config = ‘dg_config=(primdv1,stbydv1)’;
+
+ALTER SYSTEM SET log_archive_dest_2 =
+‘service=stbydv1 async valid_for=(online_logfile,primary_role) db_unique_name=stbydv1′;
+
+show parameter log_archive_config
+
+show parameter log_archive_dest_2
+If you get following error
+ERROR at line 1:
+ORA-02097: parameter cannot be modified because specified value is invalid
+ORA-16019: cannot use LOG_ARCHIVE_DEST_1 with LOG_ARCHIVE_DEST or LOG_ARCHIVE_DUPLEX_DEST
+
+Solution :
+
+1. Reset the LOG_ARCHIVE_DEST to NULL value :
+
+SQL> ALTER SYSTEM set log_archive_dest=”;
+
+2. Set the LOG_ARCHIVE_DEST_1 to the value set to LOG_ARCHIVE_DEST before
+
+SQL> ALTER SYSTEM set log_archive_dest_1=’LOCATION=/…’;
+
+if you use this code, you dont need to restart database:
+
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_1=’LOCATION=h:\oradata\archive’ SCOPE=BOTH;
+
+To check archival destination issue is ok:
+show parameter LOG_ARCHIVE_DEST;
+select DEST_ID, DEST_NAME,DESTINATION from v$archive_dest;
+
+update tnsnames.ora file with the following entries on both hosts:
+
+PRIMDV1 =
+(DESCRIPTION =
+(ADDRESS = (PROTOCOL = TCP)(HOST = dgprim0001.ukatru.com)(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = primdv1.ukatru.com)
+)
+)
+
+STBYDV1 =
+(DESCRIPTION =
+(ADDRESS = (PROTOCOL = TCP)(HOST = dgstby0001.ukatru.com)(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = stbydv1.ukatru.com)
+)
+)
+update the listner.ora with the following values on standby database:
+SID_LIST_LISTENER =
+(SID_LIST =
+(SID_DESC =
+(GLOBAL_DBNAME = standby1.example.com)
+(ORACLE_HOME = /u01/app/oracle/product/11.2.0/dbhome_1)
+(SID_NAME = standby1)
+)
+)
+
+copy the remote login password file (orapwprimdv1) from the primary database system to the $ORACLE_HOME/dbs directory on the
+standby database system, renaming it to orapwstbydv1.
+In the $ORACLE_HOME/dbs directory of the standby system, create an initialization parameter file named initstbydv1.ora
+containing a single parameter: DB_NAME=stbydv1(i.e. stbydv1)
+
+On the standby system, change to the /u01/app/oracle/admin directory. Create a directory with a name that matches your physical standby SID (i.e. stbydv1).
+Change to the newly created directory (i.e. stbydv1) and create an adump directory.
+
+now on the standby system log into database
+export ORACLE_SID=stbydv1
+dgstby0001:/u01/app/oracle/admin/stbydv1>export ORACLE_SID=stbydv1
+dgstby0001:/u01/app/oracle/admin/stbydv1>sqlplus / as sysdba
+
+SQL*Plus: Release 11.2.0.3.0 Production on Sat Apr 14 22:57:24 2012
+
+Copyright (c) 1982, 2011, Oracle. All rights reserved.
+
+Connected to an idle instance.
+
+SQL>
+SQL> startup nomount pfile=$ORACLE_HOME/dbs/initstbydv1.ora
+ORACLE instance started.
+
+Total System Global Area 238034944 bytes
+Fixed Size 2227136 bytes
+Variable Size 180356160 bytes
+Database Buffers 50331648 bytes
+Redo Buffers 5120000 bytes
+
+RMAN> connect target sys
+
+target database Password:
+connected to target database: PRIMDV1 (DBID=1462743077)
+
+RMAN> connect auxiliary sys@stbydv1
+
+auxiliary database Password:
+connected to auxiliary database: STBYDV1 (not mounted)
+
+Below is the rman script to create standby database:
+run {
+allocate channel prmy1 type disk;
+allocate channel prmy2 type disk;
+allocate channel prmy3 type disk;
+allocate channel prmy4 type disk;
+allocate auxiliary channel stby type disk;
+duplicate target database for standby from active database
+spfile
+parameter_value_convert ‘primdv1′,’stbydv1′
+set db_unique_name=’stbydv1′
+set db_file_name_convert=’/primdv1/’,’/stbydv1/’
+set log_file_name_convert=’/primdv1/’,’/stbydv1/’
+set control_files=’+DATA1′
+set log_archive_max_processes=’5′
+set fal_client=’stbydv1′
+set fal_server=’primdv1′
+set standby_file_management=’AUTO’
+set log_archive_config=’dg_config=(primdv1,stbydv1)’
+set log_archive_dest_2=’service=primdv1 ASYNC valid_for=(ONLINE_LOGFILE,PRIMARY_ROLE) db_unique_name=primdv1′
+;
+}
+
+channel prmy3: SID=55 device type=DISK
+
+allocated channel: prmy4
+channel prmy4: SID=56 device type=DISK
+
+allocated channel: stby
+channel stby: SID=19 device type=DISK
+
+Starting Duplicate Db at 14-APR-12
+
+contents of Memory Script:
+{
+backup as copy reuse
+targetfile ‘/u01/app/oracle/product/11.2.0.3/db_1/dbs/orapwprimdv1’ auxiliary format
+‘/u01/app/oracle/product/11.2.0.3/db_1/dbs/orapwstbydv1’ targetfile
+‘+DATA1/primdv1/spfileprimdv1.ora’ auxiliary format
+‘/u01/app/oracle/product/11.2.0.3/db_1/dbs/spfilestbydv1.ora’ ;
+sql clone “alter system set spfile= ”/u01/app/oracle/product/11.2.0.3/db_1/dbs/spfilestbydv1.ora””;
+}
+executing Memory Script
+
+Starting backup at 14-APR-12
+Finished backup at 14-APR-12
+
+sql statement: alter system set spfile= ”/u01/app/oracle/product/11.2.0.3/db_1/dbs/spfilestbydv1.ora”
+
+contents of Memory Script:
+{
+sql clone “alter system set audit_file_dest =
+”/u01/app/oracle/admin/stbydv1/adump” comment=
+”” scope=spfile”;
+sql clone “alter system set dispatchers =
+”(PROTOCOL=TCP) (SERVICE=stbydv1XDB)” comment=
+”” scope=spfile”;
+sql clone “alter system set log_archive_dest_1 =
+”LOCATION=+DATA1/stbydv1” comment=
+”” scope=spfile”;
+sql clone “alter system set db_unique_name =
+”stbydv1” comment=
+”” scope=spfile”;
+sql clone “alter system set db_file_name_convert =
+”/primdv1/”, ”/stbydv1/” comment=
+”” scope=spfile”;
+sql clone “alter system set log_file_name_convert =
+”/primdv1/”, ”/stbydv1/” comment=
+”” scope=spfile”;
+sql clone “alter system set control_files =
+”+DATA1” comment=
+”” scope=spfile”;
+sql clone “alter system set log_archive_max_processes =
+5 comment=
+”” scope=spfile”;
+sql clone “alter system set fal_client =
+”stbydv1” comment=
+”” scope=spfile”;
+sql clone “alter system set fal_server =
+”primdv1” comment=
+”” scope=spfile”;
+sql clone “alter system set standby_file_management =
+”AUTO” comment=
+”” scope=spfile”;
+sql clone “alter system set log_archive_config =
+”dg_config=(primdv1,stbydv1)” comment=
+”” scope=spfile”;
+sql clone “alter system set log_archive_dest_2 =
+”service=primdv1 ASYNC valid_for=(ONLINE_LOGFILE,PRIMARY_ROLE) db_unique_name=primdv1” comment=
+”” scope=spfile”;
+shutdown clone immediate;
+startup clone nomount;
+}
+executing Memory Script
+
+sql statement: alter system set audit_file_dest = ”/u01/app/oracle/admin/stbydv1/adump” comment= ”” scope=spfile
+
+sql statement: alter system set dispatchers = ”(PROTOCOL=TCP) (SERVICE=stbydv1XDB)” comment= ”” scope=spfile
+
+sql statement: alter system set log_archive_dest_1 = ”LOCATION=+DATA1/stbydv1” comment= ”” scope=spfile
+
+sql statement: alter system set db_unique_name = ”stbydv1” comment= ”” scope=spfile
+
+sql statement: alter system set db_file_name_convert = ”/primdv1/”, ”/stbydv1/” comment= ”” scope=spfile
+
+sql statement: alter system set log_file_name_convert = ”/primdv1/”, ”/stbydv1/” comment= ”” scope=spfile
+
+sql statement: alter system set control_files = ”+DATA1” comment= ”” scope=spfile
+
+sql statement: alter system set log_archive_max_processes = 5 comment= ”” scope=spfile
+
+sql statement: alter system set fal_client = ”stbydv1” comment= ”” scope=spfile
+
+sql statement: alter system set fal_server = ”primdv1” comment= ”” scope=spfile
+
+sql statement: alter system set standby_file_management = ”AUTO” comment= ”” scope=spfile
+
+sql statement: alter system set log_archive_config = ”dg_config=(primdv1,stbydv1)” comment= ”” scope=spfile
+
+sql statement: alter system set log_archive_dest_2 = ”service=primdv1 ASYNC valid_for=(ONLINE_LOGFILE,PRIMARY_ROLE) db_unique_name=primdv1” comment= ”” scope=spfile
+
+Oracle instance shut down
+
+connected to auxiliary database (not started)
+Oracle instance started
+
+Total System Global Area 1068937216 bytes
+
+Fixed Size 2235208 bytes
+Variable Size 616563896 bytes
+Database Buffers 444596224 bytes
+Redo Buffers 5541888 bytes
+allocated channel: stby
+channel stby: SID=21 device type=DISK
+
+contents of Memory Script:
+{
+sql clone “alter system set control_files =
+”+DATA1/stbydv1/controlfile/current.256.780620989” comment=
+”Set by RMAN” scope=spfile”;
+backup as copy current controlfile for standby auxiliary format ‘+DATA1/stbydv1/controlfile/current.257.780620989’;
+sql clone “alter system set control_files =
+”+DATA1/stbydv1/controlfile/current.257.780620989” comment=
+”Set by RMAN” scope=spfile”;
+shutdown clone immediate;
+startup clone nomount;
+}
+executing Memory Script
+
+sql statement: alter system set control_files = ”+DATA1/stbydv1/controlfile/current.256.780620989” comment= ”Set by RMAN” scope=spfile
+
+Starting backup at 14-APR-12
+channel prmy1: starting datafile copy
+copying standby control file
+output file name=/u01/app/oracle/product/11.2.0.3/db_1/dbs/snapcf_primdv1.f tag=TAG20120414T230949 RECID=1 STAMP=780620989
+channel prmy1: datafile copy complete, elapsed time: 00:00:03
+Finished backup at 14-APR-12
+
+sql statement: alter system set control_files = ”+DATA1/stbydv1/controlfile/current.257.780620989” comment= ”Set by RMAN” scope=spfile
+
+Oracle instance shut down
+
+connected to auxiliary database (not started)
+Oracle instance started
+
+Total System Global Area 1068937216 bytes
+
+Fixed Size 2235208 bytes
+Variable Size 616563896 bytes
+Database Buffers 444596224 bytes
+Redo Buffers 5541888 bytes
+allocated channel: stby
+channel stby: SID=23 device type=DISK
+
+contents of Memory Script:
+{
+sql clone ‘alter database mount standby database’;
+}
+executing Memory Script
+
+sql statement: alter database mount standby database
+RMAN-05529: WARNING: DB_FILE_NAME_CONVERT resulted in invalid ASM names; names changed to disk group only.
+
+contents of Memory Script:
+{
+set newname for tempfile 1 to
+“+data1”;
+switch clone tempfile all;
+set newname for datafile 1 to
+“+data1”;
+set newname for datafile 2 to
+“+data1”;
+set newname for datafile 3 to
+“+data1”;
+set newname for datafile 4 to
+“+data1”;
+backup as copy reuse
+datafile 1 auxiliary format
+“+data1” datafile
+2 auxiliary format
+“+data1” datafile
+3 auxiliary format
+“+data1” datafile
+4 auxiliary format
+“+data1” ;
+sql ‘alter system archive log current’;
+}
+executing Memory Script
+
+executing command: SET NEWNAME
+
+renamed tempfile 1 to +data1 in control file
+
+executing command: SET NEWNAME
+
+executing command: SET NEWNAME
+
+executing command: SET NEWNAME
+
+executing command: SET NEWNAME
+
+Starting backup at 14-APR-12
+channel prmy1: starting datafile copy
+input datafile file number=00001 name=+DATA1/primdv1/datafile/system.261.780607599
+channel prmy2: starting datafile copy
+input datafile file number=00002 name=+DATA1/primdv1/datafile/sysaux.262.780607621
+channel prmy3: starting datafile copy
+input datafile file number=00003 name=+DATA1/primdv1/datafile/undotbs1.263.780607639
+channel prmy4: starting datafile copy
+input datafile file number=00004 name=+DATA1/primdv1/datafile/users.265.780607653
+output file name=+DATA1/stbydv1/datafile/users.260.780621011 tag=TAG20120414T231009
+channel prmy4: datafile copy complete, elapsed time: 00:00:08
+output file name=+DATA1/stbydv1/datafile/undotbs1.261.780621011 tag=TAG20120414T231009
+channel prmy3: datafile copy complete, elapsed time: 00:01:47
+output file name=+DATA1/stbydv1/datafile/system.258.780621011 tag=TAG20120414T231009
+channel prmy1: datafile copy complete, elapsed time: 00:02:28
+output file name=+DATA1/stbydv1/datafile/sysaux.259.780621011 tag=TAG20120414T231009
+channel prmy2: datafile copy complete, elapsed time: 00:02:27
+Finished backup at 14-APR-12
+
+sql statement: alter system archive log current
+
+contents of Memory Script:
+{
+switch clone datafile all;
+}
+executing Memory Script
+
+datafile 1 switched to datafile copy
+input datafile copy RECID=1 STAMP=780621158 file name=+DATA1/stbydv1/datafile/system.258.780621011
+datafile 2 switched to datafile copy
+input datafile copy RECID=2 STAMP=780621158 file name=+DATA1/stbydv1/datafile/sysaux.259.780621011
+datafile 3 switched to datafile copy
+input datafile copy RECID=3 STAMP=780621158 file name=+DATA1/stbydv1/datafile/undotbs1.261.780621011
+datafile 4 switched to datafile copy
+input datafile copy RECID=4 STAMP=780621158 file name=+DATA1/stbydv1/datafile/users.260.780621011
+Finished Duplicate Db at 14-APR-12
+released channel: prmy1
+released channel: prmy2
+released channel: prmy3
+released channel: prmy4
+released channel: stby
+
+RMAN> **end-of-file**
+Perform a log switch on the primary database and redo will start being sent to the standby.
+dgprim0001:/u01/app/oracle/wkdir>sqlplus / as sysdba
+
+SQL*Plus: Release 11.2.0.3.0 Production on Sat Apr 14 23:14:57 2012
+
+Copyright (c) 1982, 2011, Oracle. All rights reserved.
+Connected to:
+Oracle Database 11g Enterprise Edition Release 11.2.0.3.0 – 64bit Production
+With the Partitioning, Automatic Storage Management, OLAP, Data Mining
+and Real Application Testing options
+
+SQL> alter system switch logfile;
+
+System altered.
+
+dgstby0001:/u01/app/oracle/product/11.2.0.3/db_1/network/admin>sqlplus / as sysdba
+
+SQL*Plus: Release 11.2.0.3.0 Production on Sat Apr 14 23:15:50 2012
+
+Copyright (c) 1982, 2011, Oracle. All rights reserved.
+Connected to:
+Oracle Database 11g Enterprise Edition Release 11.2.0.3.0 – 64bit Production
+With the Partitioning, Automatic Storage Management, OLAP, Data Mining
+and Real Application Testing options
+
+SQL> alter database recover managed standby database
+2 using current logfile disconnect;
+
+Database altered.
+
+Now Verify that the Physical Standby Database is Performing Correctly
+
+SELECT sequence#, first_time, next_time, applied
+FROM v$archived_log
+ORDER BY sequence#
+/
+
+SQL> SELECT sequence#, first_time, next_time, applied
+FROM v$archived_log
+ORDER BY sequence#
+/
+2 3 4
+SEQUENCE# FIRST_TIM NEXT_TIME APPLIED
+———- ——— ——— ———
+31 14-APR-12 14-APR-12 YES
+32 14-APR-12 14-APR-12 YES
+33 14-APR-12 14-APR-12 YES
+34 14-APR-12 14-APR-12 YES
+35 14-APR-12 14-APR-12 YES
+36 14-APR-12 14-APR-12 IN-MEMORY
+
+6 rows selected.

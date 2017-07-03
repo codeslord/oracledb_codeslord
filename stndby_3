@@ -1,0 +1,291 @@
+Step By Step Guide On Creating Physical Standby Using RMAN(Non ASM)
+May 12, 2011 ukatru454	Leave a comment Go to comments
+
+This article is intend to explain Step by step guide on how to create a physical standby database using RMAN:
+
+Step By Step Guide To Create Physical Standby Database.
+
+Primary Database:oradv1
+Physical Stand by Database:psoradv1
+
+Primary Database Server : dbsl9001
+Secondary Database Server dbsl9002
+
+Step1:Add following tnsnames on both servers:
+
+ORADV1 =
+(DESCRIPTION =
+(ADDRESS = (PROTOCOL = TCP)(HOST = dbsl9001.ukatru.com )(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = oradv1.ukatru.com)
+)
+)
+
+PSORADV1 =
+(DESCRIPTION =
+(ADDRESS = (PROTOCOL = TCP)(HOST = dbsl9002.ukatru.com )(PORT = 1521))
+(CONNECT_DATA =
+(SERVER = DEDICATED)
+(SERVICE_NAME = psoradv1.ukatru.com)
+)
+)
+
+Step2 : Backup the database that includes backup of datafiles, archivelogs and controlfile for standby
+
+create following dir on both servers.
+
+mkdir -p /u01/app/oracle/backup
+
+run
+{
+allocate channel c1 type disk;
+backup database plus archivelog format ‘/u01/app/oracle/backup/%d_%s_%t’;
+}
+
+Back up the current control file for stanby
+
+run
+{
+allocate channel c1 type disk;
+backup current controlfile for standby format ‘/u01/app/oracle/backup/%d_controlfile’;
+}
+
+Step3 : move the backups to stand by server.
+
+Step 4: Make changes in the parameter files of both primary and standby database
+
+Primary :
+alter system set log_archive_dest_2=’SERVICE=psoradv1′ scope=both;
+
+SQL> alter system set log_archive_dest_2=’SERVICE=psoradv1′ scope=both;
+
+System altered.
+
+SQL> create pfile=’/tmp/initoradv1.ora’ from spfile;
+
+File created.
+
+Stand by Server:
+Copy the password file from primary.
+*dbsl9001*<oracle:oradv1>:/u01/app/oracle/product/10.2.0.5/db_1/dbs=>scp orapworadv1 dbsl9002:/u01/app/oracle/product/10.2.0.5/db_1/dbs/orapwdpsoradv1
+orapworadv1                                                                                                                100% 1536     1.5KB/s   00:00
+
+create admin directoris on stand by server:
+mkdir -p /u01/app/oracle/admin/psoradv1/adump
+mkdir -p /u01/app/oracle/admin/psoradv1/bdump
+mkdir -p /u01/app/oracle/admin/psoradv1/cdump
+mkdir -p /u01/app/oracle/admin/psoradv1/udump
+mkdir -p /u01/app/oracle/admin/psoradv1/pfile
+mkdir -p /u01/app/oracle/admin/psoradv1/scripts
+
+Copy the primary database parameter file and make necessary changes :
+*.audit_file_dest=’/u01/app/oracle/admin/psoradv1/adump’
+*.background_dump_dest=’/u01/app/oracle/admin/psoradv1/bdump’
+*.control_files=’/oradata/psoradv1/control01.ctl’,’/oradata/psoradv1/control02.ctl’,’/oradata/psoradv1/control03.ctl’
+*.core_dump_dest=’/u01/app/oracle/admin/psoradv1/cdump’
+db_file_name_convert=’/oradata/oradv1/’,’/oradata/psoradv1/’
+*.db_name=’oradv1′
+db_unique_name=’psoradv1′
+instance_name=’psoradv1′
+
+*dbsl9002*<oracle:psoradv1>:/u01/app/oracle/product/10.2.0.5/db_1/bin=>./rman target /
+
+Recovery Manager: Release 10.2.0.5.0 – Production on Thu May 12 14:15:56 2011
+
+Copyright (c) 1982, 2007, Oracle.  All rights reserved.
+
+connected to target database (not started)
+
+RMAN> startup nomount;
+
+Oracle instance started
+
+Total System Global Area     331350016 bytes
+
+Fixed Size                     2096056 bytes
+Variable Size                100664392 bytes
+Database Buffers             222298112 bytes
+Redo Buffers                   6291456 bytes
+
+RMAN> set dbid=1470870068;
+
+executing command: SET DBID
+
+RMAN> restore standby controlfile from ‘/u01/app/oracle/backup/ORADV1_controlfile’;
+
+Starting restore at 12-MAY-11
+using channel ORA_DISK_1
+
+channel ORA_DISK_1: restoring control file
+channel ORA_DISK_1: restore complete, elapsed time: 00:00:01
+output filename=/oradata/psoradv1/control01.ctl
+output filename=/oradata/psoradv1/control02.ctl
+output filename=/oradata/psoradv1/control03.ctl
+Finished restore at 12-MAY-11
+
+RMAN>  sql ‘alter database mount standby database’;
+
+sql statement: alter database mount standby database
+released channel: ORA_DISK_1
+
+configure channel 1 device type disk format ‘/u01/app/oracle/backup/%d_%s_%t’;
+
+RMAN> restore database;
+
+Starting restore at 12-MAY-11
+allocated channel: ORA_DISK_1
+channel ORA_DISK_1: sid=156 devtype=DISK
+
+channel ORA_DISK_1: starting datafile backupset restore
+channel ORA_DISK_1: specifying datafile(s) to restore from backup set
+restoring datafile 00001 to /oradata/psoradv1/system01.dbf
+restoring datafile 00002 to /oradata/psoradv1/undotbs01.dbf
+restoring datafile 00003 to /oradata/psoradv1/sysaux01.dbf
+restoring datafile 00004 to /oradata/psoradv1/users01.dbf
+channel ORA_DISK_1: reading from backup piece /u01/app/oracle/product/10.2.0.5/db_1/dbs/0jmc58dt_1_1
+channel ORA_DISK_1: restored backup piece 1
+piece handle=/u01/app/oracle/product/10.2.0.5/db_1/dbs/0jmc58dt_1_1 tag=TAG20110512T140133
+channel ORA_DISK_1: restore complete, elapsed time: 00:00:35
+Finished restore at 12-MAY-11
+
+RMAN> list backup of archivelog all;
+
+RMAN> list backup of archivelog all;
+
+List of Backup Sets
+===================
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+5       25.70M     DISK        00:00:01     09-MAY-11
+BP Key: 5   Status: AVAILABLE  Compressed: NO  Tag: TAG20110509T222259
+Piece Name: /tmp/oradv1_backup_750723779_7p1
+
+List of Archived Logs in backup set 5
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    19      237630     09-MAY-11 246085     09-MAY-11
+1    20      246085     09-MAY-11 246103     09-MAY-11
+1    21      246103     09-MAY-11 246186     09-MAY-11
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+8       2.00K      DISK        00:00:01     09-MAY-11
+BP Key: 8   Status: AVAILABLE  Compressed: NO  Tag: TAG20110509T222339
+Piece Name: /tmp/oradv1_backup_750723819_10p1
+
+List of Archived Logs in backup set 8
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    22      246186     09-MAY-11 246205     09-MAY-11
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+10      41.97M     DISK        00:00:03     10-MAY-11
+BP Key: 10   Status: AVAILABLE  Compressed: NO  Tag: TAG20110510T121303
+Piece Name: /u01/app/oracle/product/10.2.0.5/db_1/dbs/0cmbvpaf_1_1
+
+List of Archived Logs in backup set 10
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    19      237630     09-MAY-11 246085     09-MAY-11
+1    20      246085     09-MAY-11 246103     09-MAY-11
+1    21      246103     09-MAY-11 246186     09-MAY-11
+1    22      246186     09-MAY-11 246205     09-MAY-11
+1    23      246205     09-MAY-11 266589     10-MAY-11
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+13      3.00K      DISK        00:00:01     10-MAY-11
+BP Key: 13   Status: AVAILABLE  Compressed: NO  Tag: TAG20110510T121335
+Piece Name: /u01/app/oracle/product/10.2.0.5/db_1/dbs/0fmbvpbg_1_1
+
+List of Archived Logs in backup set 13
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    24      266589     10-MAY-11 266607     10-MAY-11
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+15      82.96M     DISK        00:00:03     12-MAY-11
+BP Key: 15   Status: AVAILABLE  Compressed: NO  Tag: TAG20110512T140129
+Piece Name: /u01/app/oracle/backup/ORADV1_18_750952889
+
+List of Archived Logs in backup set 15
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    19      237630     09-MAY-11 246085     09-MAY-11
+1    20      246085     09-MAY-11 246103     09-MAY-11
+1    21      246103     09-MAY-11 246186     09-MAY-11
+1    22      246186     09-MAY-11 246205     09-MAY-11
+1    23      246205     09-MAY-11 266589     10-MAY-11
+1    24      266589     10-MAY-11 266607     10-MAY-11
+1    25      266607     10-MAY-11 272503     10-MAY-11
+1    26      272503     10-MAY-11 316060     12-MAY-11
+
+BS Key  Size       Device Type Elapsed Time Completion Time
+——- ———- ———– ———— —————
+18      2.00K      DISK        00:00:01     12-MAY-11
+BP Key: 18   Status: AVAILABLE  Compressed: NO  Tag: TAG20110512T140200
+Piece Name: /u01/app/oracle/backup/ORADV1_21_750952920
+
+List of Archived Logs in backup set 18
+Thrd Seq     Low SCN    Low Time  Next SCN   Next Time
+—- ——- ———- ——— ———- ———
+1    27      316060     12-MAY-11 316077     12-MAY-11
+
+RMAN>  recover database until sequence 28;
+
+Starting recover at 12-MAY-11
+using channel ORA_DISK_1
+
+starting media recovery
+
+channel ORA_DISK_1: starting archive log restore to default destination
+channel ORA_DISK_1: restoring archive log
+archive log thread=1 sequence=27
+channel ORA_DISK_1: reading from backup piece /u01/app/oracle/backup/ORADV1_21_750952920
+channel ORA_DISK_1: restored backup piece 1
+piece handle=/u01/app/oracle/backup/ORADV1_21_750952920 tag=TAG20110512T140200
+channel ORA_DISK_1: restore complete, elapsed time: 00:00:01
+archive log filename=/oradata/psoradv1_1_27_750720628.dbf thread=1 sequence=27
+Oracle Error:
+ORA-01547: warning: RECOVER succeeded but OPEN RESETLOGS would get error below
+ORA-01152: file 1 was not restored from a sufficiently old backup
+ORA-01110: data file 1: ‘/oradata/psoradv1/system01.dbf’
+
+media recovery complete, elapsed time: 00:00:04
+Finished recover at 12-MAY-11
+
+Note : No need to worry about the below errors
+Oracle Error:
+ORA-01547: warning: RECOVER succeeded but OPEN RESETLOGS would get error below
+ORA-01152: file 1 was not restored from a sufficiently old backup
+ORA-01110: data file 1: ‘/u01/oracle/product/ora10g/oradata/standby/data/sys01.dbf’
+
+create standby redo log files from both prim and standby databases:
+
+put the standby database in recover managed mode
+
+*dbsl9002*<oracle:psoradv1>:/u01/app/oracle/product/10.2.0.5/db_1/bin=>sqlplus / as sysdba
+
+SQL*Plus: Release 10.2.0.5.0 – Production on Thu May 12 15:05:47 2011
+
+Copyright (c) 1982, 2010, Oracle.  All Rights Reserved.
+
+Connected to:
+Oracle Database 10g Enterprise Edition Release 10.2.0.5.0 – 64bit Production
+With the Partitioning, OLAP, Data Mining and Real Application Testing options
+
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 4 ‘/oradata/psoradv1/redo04.log’ SIZE 50M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 5 ‘/oradata/psoradv1/redo05.log’ SIZE 50M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 6 ‘/oradata/psoradv1/redo06.log’ SIZE 50M;
+
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 4 ‘/oradata/oradv1/redo04.log’ SIZE 50M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 5 ‘/oradata/oradv1/redo05.log’ SIZE 50M;
+ALTER DATABASE ADD STANDBY LOGFILE GROUP 6 ‘/oradata/oradv1/redo06.log’ SIZE 50M;
+
+SQL> ALTER DATABASE RECOVER MANAGED STANDBY DATABASE USING CURRENT LOGFILE DISCONNECT;
+
+Database altered.

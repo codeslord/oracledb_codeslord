@@ -1,0 +1,96 @@
+How to install Oracle 12.1 in silent mode
+
+
+I have installed Oracle 12.1.0.1 on Oracle Linux 6.3 64 bits with the Oracle validated RPM for 11.2 (this will install all packages needed by Oracle, configure Linux kernel, create ‘oracle’ account and change other setttings required for Oracle Database software installation):
+
+# yum install oracle-rdbms-server-11gR2-preinstall -y
+
+Start by disabling firewall and SELINUX and then reboot:
+
+# service iptables stop
+# chkconfig iptables off
+# grep SELINUX /etc/selinux/config
+#SELINUX= can take one of these three values:
+SELINUX=disabled
+# SELINUXTYPE= can take one of these two values:
+SELINUXTYPE=targeted
+# reboot
+
+Create the Oracle Home directory:
+
+# mkdir -p /u01/app/oracle/product/12.1.0/db_1
+# chown -R oracle:oinstall /u01
+# chmod -R 775 /u01
+
+Create additional group and assign it to ‘oracle’ account:
+
+# groupadd -g 54323 oper
+# usermod -u 54231 -g oinstall -G dba,oper oracle
+
+Switch to ‘oracle’ account and unzip Oracle media in /tmp:
+
+$ unzip linuxamd64_12c_database_1of2.zip
+$ unzip linuxamd64_12c_database_2of2.zip
+
+Install Oracle software with following script:
+
+cd /tmp/database
+export DISTRIB=`pwd`
+./runInstaller -silent \
+-responseFile $DISTRIB/response/db_install.rsp \
+oracle.install.option=INSTALL_DB_SWONLY \
+UNIX_GROUP_NAME=oinstall \
+INVENTORY_LOCATION=/u01/app/oraInventory \
+SELECTED_LANGUAGES=en,fr \
+ORACLE_HOME=/u01/app/oracle/product/12.1.0/db_1 \
+ORACLE_BASE=/u01/app/oracle \
+oracle.install.db.InstallEdition=EE \
+oracle.install.db.isCustomInstall=false \
+oracle.install.db.DBA_GROUP=dba \
+oracle.install.db.OPER_GROUP=dba \
+oracle.install.db.BACKUPDBA_GROUP=dba \
+oracle.install.db.DGDBA_GROUP=dba \
+oracle.install.db.KMDBA_GROUP=dba \
+SECURITY_UPDATES_VIA_MYORACLESUPPORT=false \
+DECLINE_SECURITY_UPDATES=true
+
+This has started installation in the background: you need to wait until something similar to the following is displayed:
+
+The installation of Oracle Database 12c was successful.
+Please check '/u01/app/oraInventory/logs/silentInstallXXX.log' for more details.
+
+As a root user, execute the following script(s):
+1. /u01/app/oraInventory/orainstRoot.sh
+2. /u01/app/oracle/product/12.1.0/db_1/root.sh
+
+Successfully Setup Software.
+
+As requested run following scripts with ‘root’ account:
+
+# /u01/app/oraInventory/orainstRoot.sh
+# /u01/app/oracle/product/12.1.0/db_1/root.sh
+
+Modify oracle user .bash_profile to add:
+
+
+# Oracle Settings
+export TMP=/tmp
+export TMPDIR=$TMP
+
+export ORACLE_HOSTNAME=hostname.localdomain
+export ORACLE_UNQNAME=cdb12c
+export ORACLE_BASE=/u01/app/oracle
+export ORACLE_HOME=$ORACLE_BASE/product/12.1.0/db_1
+export ORACLE_SID=cdb12c
+
+export PATH=/usr/sbin:$PATH
+export PATH=$ORACLE_HOME/bin:$PATH
+
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib
+export CLASSPATH=$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib
+
+Logout and login again as ‘oracle’ and test:
+
+$ sqlplus -v
+
+SQL*Plus: Release 12.1.0.1.0 Production

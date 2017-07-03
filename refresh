@@ -1,0 +1,150 @@
+1. transfer the bkup
+2. pfile
+3. db_file_
+4. log_file_
+5. drop database
+6. start auxiliary in nomount
+6. restore controlfile
+7. restore database
+8. recover
+9. open resetlogs
+
+ RMAN REFRESH STEPS:
+
+
+1) Take backup of the Indus database.
+
+2) Copy over the production database backup files to the indus Server.
+
+3) Change the backup filesystem to the production naming.
+
+4) Add the production database entries in ORATAB:
+
+5) Login to the Indus database and take the datafile details, user passwords and DB links.
+
+SQL> select name from v$datafile;
+
+NAME
+--------------------------------------------------------------------------------
+/oracle/data/bhargav/tca0/vol30/bhargavtca0.system.a001.dbf
+/oracle/data/bhargav/tca0/vol40/bhargavtca0.undo01.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavmna0.tools.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavtca0.perfstat.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavmna0.d_rdi01.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavmna0.d_rdi02.a001.dbf
+/oracle/data/bhargav/tca0/vol20/bhargavmna0.i_rdi01.a001.dbf
+/oracle/data/bhargav/tca0/vol20/bhargavmna0.i_rdi02.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavmna0.d_rwh01.a001.dbf
+/oracle/data/bhargav/tca0/vol10/bhargavmna0.d_rwh02.a001.dbf
+/oracle/data/bhargav/tca0/vol20/bhargavmna0.i_rwh01.a001.dbf
+
+
+6) Shut down the Indus database.
+
+SQL> shut immediate 
+
+7) Remove all the Indus database files (datafiles,logfiles and controlfiles).
+
+8) Set SID to Production.
+
+ORACLE_SID = [idfutca0] ? rrditca0
+
+9) Copy over the Production database "pfile" to the indus server.
+
+10) Check for bdump,udump and cdump for prod DB. If not present create it.
+
+11) Connect to production database and startup nomount.
+
+SQL> startup nomount
+
+12) Check for Production catalog entry in tnsnames.ora
+
+13) connect to RMAN
+
+[oncspdq1]:rman target / catalog rman@rmanmna2
+
+14) Set the production DBID. 
+
+RMAN> set dbid=3178638913
+
+15) Restore the controlfile.
+
+RMAN> run{
+set until time "to_date('2009-07-02:10:55:00','yyyy-mm-dd:hh24:mi:ss')";
+restore controlfile from  '/oracle/data/bha1/tca0/backup/rman_backups/cf_c-3178638913-20090702-05' ;
+}
+
+16) connect to sqlplus and mount the prod db.
+
+[oncspdq1]:sqlplus "/ as sysdba"
+
+SQL> alter database mount;
+
+17) Connect to RMAN, restore and recover the database.
+
+[oncspdq1]:rman target / catalog rman@rmanmna2
+
+RMAN> run
+{
+set until time "to_date('2009-07-02:10:55:00','yyyy-mm-dd:hh24:mi:ss')";
+set newname for datafile '/oracle/data/bha1/tca0/data3/bha1tca0.system.a001.dbf' to '/oracle/data/ispd/tca0/data3/ispdtca0.system.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/undo/bha1tca0.UNDO0001.a001.dbf' to '/oracle/data/ispd/tca0/undo/ispdtca0.UNDO0001.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data3/bha1tca0.sysaux.a001.dbf' to '/oracle/data/ispd/tca0/data3/ispdtca0.sysaux.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data1/bha1tca0.tools.a001.dbf' to '/oracle/data/ispd/tca0/data1/ispdtca0.tools.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data1/bha1tca0.users.a001.dbf' to '/oracle/data/ispd/tca0/data1/ispdtca0.users.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data1/bha1tca0.d_spd01.a001.dbf' to '/oracle/data/ispd/tca0/data1/ispdtca0.d_spd01.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data1/bha1tca0.igpdata.a001.dbf' to '/oracle/data/ispd/tca0/data1/ispdtca0.igpdata.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/index1/bha1tca0.i_spd01.a001.dbf' to '/oracle/data/ispd/tca0/index1/ispdtca0.i_spd01.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data3/bha1tca0.perftbs.a001.dbf' to '/oracle/data/ispd/tca0/data3/ispdtca0.perftbs.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data3/bha1tca0.scpodata.a001.dbf' to '/oracle/data/ispd/tca0/data3/ispdtca0.scpodata.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/index1/bha1tca0.scpoindex.a001.dbf' to '/oracle/data/ispd/tca0/index1/ispdtca0.scpoindex.a001.dbf';
+set newname for datafile '/oracle/data/bha1/tca0/data3/bha1tca0.wwfdata.a001.dbf' to '/oracle/data/ispd/tca0/data3/ispdtca0.wwfdata.a001.dbf';
+restore database;
+switch datafile all;
+recover database delete archivelog;
+}
+
+18) Once recovery is completed, login to the database and alter the logfile location.
+
+SQL> select member from v$logfile;
+
+MEMBER
+--------------------------------------------------------------------------------
+/oracle/data/bha1/tca0/redoa/bha1tca0.log3a.rdo
+/oracle/data/bha1/tca0/redob/bha1tca0.log3b.rdo
+/oracle/data/bha1/tca0/redoa/bha1tca0.log1a.rdo
+/oracle/data/bha1/tca0/redob/bha1tca0.log1b.rdo
+/oracle/data/bha1/tca0/redoa/bha1tca0.log2a.rdo
+/oracle/data/bha1/tca0/redob/bha1tca0.log2b.rdo
+
+SQL> alter database rename file '/oracle/data/bha1/tca0/redoa/bha1tca0.log3a.rdo' to '/oracle/data/ispd/tca0/redoa/ispdtca0.log3a.rdo' ;
+
+19) Open the database with resetlogs.
+
+SQL> alter database open resetlogs;
+
+20) Change the sys user password.
+
+SQL> alter user sys identified by sys;
+
+21) Remove the tempfiles and re-create them.
+
+21) Shut down the production database.
+
+SQL> shut immediate;
+
+22) Startup the database in mount.
+
+SQL> startup mount ;
+
+23) Use nid to change the dbname and dbid.
+[oncspdq1]:nid target=sys/sys dbname=ispdtca0
+
+24) Set ORACLE_SID to Indus database sid.
+
+25) Remove the production entries from ORATAB.
+
+26) Login to the indus database and restore the DB links and user passwords.
+
+27) Rename back the Indus backup filesystem.
+

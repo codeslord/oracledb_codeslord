@@ -1,0 +1,428 @@
+Oracle Database 12.2.0.1 silent installation and database creation on Oracle Linux 7
+
+Today 1st of March 2017 Oracle Corp. has released Oracle Database 12.2.0.1 on OTN.
+Silent Oracle Database installation
+
+This is my first 12.2 non-cloud installation on a new Oracle Linux 7.3 virtual machine (VM) using a minimum Linux installation:
+
+# cat /etc/redhat-release 
+Red Hat Enterprise Linux Server release 7.3 (Maipo)
+# cat /etc/oracle-release 
+Oracle Linux Server release 7.3
+
+This VM has 4 GB of RAM (and 4 GB of swap space), one single 40 GB disk and is connected to internet to be able to access Oracle Linux public yum repository:
+
+# yum repolist
+Loaded plugins: ulninfo
+ol7_UEKR4                                                                                                             | 1.2 kB  00:00:00     
+ol7_latest                                                                                                            | 1.4 kB  00:00:00     
+(1/5): ol7_UEKR4/x86_64/updateinfo                                                                                    |  38 kB  00:00:01     
+(2/5): ol7_latest/x86_64/group                                                                                        | 681 kB  00:00:07     
+(3/5): ol7_latest/x86_64/updateinfo                                                                                   | 1.2 MB  00:00:10     
+(4/5): ol7_UEKR4/x86_64/primary                                                                                       |  13 MB  00:00:37     
+(5/5): ol7_latest/x86_64/primary                                                                                      |  23 MB  00:01:25     
+ol7_UEKR4                                                                                                                            295/295
+ol7_latest                                                                                                                       18407/18407
+repo id                             repo name                                                                                          status
+ol7_UEKR4/x86_64                    Latest Unbreakable Enterprise Kernel Release 4 for Oracle Linux 7Server (x86_64)                      295
+ol7_latest/x86_64                   Oracle Linux 7Server Latest (x86_64)                                                               18,407
+repolist: 18,702
+
+I have installed 12.2 preinstallation RPM to ease Oracle installation using Internet connection. I have connected as root and run:
+
+# yum -y install oracle-database-server-12cR2-preinstall
+
+Note that preinstallation RPM has also created oracle account:
+
+# id oracle
+uid=54321(oracle) gid=54321(oinstall) groups=54321(oinstall),54322(dba)
+
+I have downloaded from OTN installation media, uploaded it to a VM staging directory owned by oracle and unzipped it:
+
+$ unzip linuxx64_12201_database.zip
+$ ls -al
+total 3372760
+drwxr-xr-x.  3 oracle dba              55 Mar  1 21:02 .
+dr-xr-xr-x. 19 root   root           4096 Mar  1 20:53 ..
+drwxr-xr-x.  7 oracle oinstall       4096 Jan 26 17:22 database
+-rw-r--r--.  1 root   root     3453696911 Mar  1 20:56 linuxx64_12201_database.zip
+
+I have created following directories with root account:
+/u01/db12201 for Oracle Database Home
+/u01/orainv for Oracle inventory
+/u01/oracle for Oracle Base
+
+# mkdir /u01
+# mkdir /u01/db12201
+# mkdir /u01/orainv
+# mkdir /u01/oracle
+# chown -R oracle:dba /u01
+
+To install Oracle Database in silent mode I have used:
+
+set -x
+rm -rf /u01/orainv/logs
+cd /stage/database
+export DISTRIB=`pwd`
+./runInstaller -silent \
+   -responseFile $DISTRIB/response/db_install.rsp      \
+   oracle.install.option=INSTALL_DB_SWONLY             \
+   UNIX_GROUP_NAME=oinstall                            \
+   INVENTORY_LOCATION=/u01/orainv                      \
+   SELECTED_LANGUAGES=en                               \
+   ORACLE_HOME=/u01/db12201                            \
+   ORACLE_BASE=/u01/oracle                             \
+   oracle.install.db.InstallEdition=EE                 \
+   oracle.install.db.isCustomInstall=false             \
+   oracle.install.db.OSDBA_GROUP=dba                   \
+   oracle.install.db.OSBACKUPDBA_GROUP=dba             \
+   oracle.install.db.OSDGDBA_GROUP=dba                 \
+   oracle.install.db.OSKMDBA_GROUP=dba                 \
+   oracle.install.db.OSRACDBA_GROUP=dba                \
+   SECURITY_UPDATES_VIA_MYORACLESUPPORT=false          \
+   DECLINE_SECURITY_UPDATES=true
+
+Output is:
+
+++ rm -rf /u01/orainv/logs
+++ cd /stage/database
++++ pwd
+++ export DISTRIB=/stage/database
+++ DISTRIB=/stage/database
+++ ./runInstaller -silent -responseFile /stage/database/response/db_install.rsp oracle.install.option=INSTALL_DB_SWONLY UNIX_GROUP_NAME=oinstall INVENTORY_LOCATION=/u01/orainv SELECTED_LANGUAGES=en ORACLE_HOME=/u01/db12201 ORACLE_BASE=/u01/oracle oracle.install.db.InstallEdition=EE oracle.install.db.isCustomInstall=false oracle.install.db.OSDBA_GROUP=dba oracle.install.db.OSBACKUPDBA_GROUP=dba oracle.install.db.OSDGDBA_GROUP=dba oracle.install.db.OSKMDBA_GROUP=dba oracle.install.db.OSRACDBA_GROUP=dba SECURITY_UPDATES_VIA_MYORACLESUPPORT=false DECLINE_SECURITY_UPDATES=true
+Starting Oracle Universal Installer...
+
+Checking Temp space: must be greater than 500 MB.   Actual 27215 MB    Passed
+Checking swap space: must be greater than 150 MB.   Actual 3967 MB    Passed
+Preparing to launch Oracle Universal Installer from /tmp/OraInstall2017-03-01_09-04-40PM. Please wait ...
+[oracle@ol7ttfs1 scripts]$ [WARNING] [INS-32018] The selected Oracle home is outside of Oracle base.
+   ACTION: Oracle recommends installing Oracle software within the Oracle base directory. Adjust the Oracle home or Oracle base accordingly.
+You can find the log of this install session at:
+ /u01/orainv/logs/installActions2017-03-01_09-04-40PM.log
+The installation of Oracle Database 12c was successful.
+Please check '/u01/orainv/logs/silentInstall2017-03-01_09-04-40PM.log' for more details.
+
+As a root user, execute the following script(s):
+	1. /u01/orainv/orainstRoot.sh
+	2. /u01/db12201/root.sh
+
+
+
+Successfully Setup Software.
+
+I have run as root:
+
+# /u01/orainv/orainstRoot.sh
+Changing permissions of /u01/orainv.
+Adding read,write permissions for group.
+Removing read,write,execute permissions for world.
+
+Changing groupname of /u01/orainv to oinstall.
+The execution of the script is complete.
+# /u01/db12201/root.sh
+Check /u01/db12201/install/root_ol7ttfs1.localdomain_2017-03-01_21-09-04-788037704.log for the output of root script
+[root@ol7ttfs1 ~]# cat /u01/db12201/install/root_ol7ttfs1.localdomain_2017-03-01_21-09-04-788037704.log
+Performing root user operation.
+
+The following environment variables are set as:
+    ORACLE_OWNER= oracle
+    ORACLE_HOME=  /u01/db12201
+   Copying dbhome to /usr/local/bin ...
+   Copying oraenv to /usr/local/bin ...
+   Copying coraenv to /usr/local/bin ...
+
+
+Creating /etc/oratab file...
+Entries will be added to the /etc/oratab file as needed by
+Database Configuration Assistant when a database is created
+Finished running generic part of root script.
+Now product-specific root actions will be performed.
+Oracle Trace File Analyzer (TFA) is available at : /u01/db12201/suptools/tfa/release/tfa_home/bin/tfactl 
+# 
+
+I have run a quick opatch check:
+
+$ export ORACLE_HOME=/u01/db12201
+$ PATH=$ORACLE_HOME/bin:$PATH
+$ $ORACLE_HOME/OPatch/opatch lsinv
+Oracle Interim Patch Installer version 12.2.0.1.6
+Copyright (c) 2017, Oracle Corporation.  All rights reserved.
+
+
+Oracle Home       : /u01/db12201
+Central Inventory : /u01/orainv
+   from           : /u01/db12201/oraInst.loc
+OPatch version    : 12.2.0.1.6
+OUI version       : 12.2.0.1.4
+Log file location : /u01/db12201/cfgtoollogs/opatch/opatch2017-03-01_21-10-29PM_1.log
+
+Lsinventory Output file location : /u01/db12201/cfgtoollogs/opatch/lsinv/lsinventory2017-03-01_21-10-29PM.txt
+
+--------------------------------------------------------------------------------
+Local Machine Information::
+Hostname: localhost
+ARU platform id: 226
+ARU platform description:: Linux x86-64
+
+Installed Top-level Products (1): 
+
+Oracle Database 12c                                                  12.2.0.1.0
+There are 1 products installed in this Oracle Home.
+
+
+There are no Interim patches installed in this Oracle Home.
+
+
+--------------------------------------------------------------------------------
+
+OPatch succeeded.
+
+Silent database creation
+
+I have used following script to create a container database named CDB with one pluggable database:
+
+dbca -silent \
+-createDatabase \
+-templateName General_Purpose.dbc \
+-gdbName CDB \
+-sid CDB \
+-createAsContainerDatabase true \
+-numberOfPdbs 1 \
+-pdbName pdb \
+-pdbadminUsername pdba \
+-pdbadminPassword oracle12c \
+-SysPassword oracle12c \
+-SystemPassword oracle12c \
+-emConfiguration NONE \
+-storageType FS \
+-datafileDestination /u01/oradata \
+-recoveryAreaDestination /u01/fra \
+-recoveryAreaSize 3200  \
+-characterSet AL32UTF8 \
+-memoryPercentage 40 \
+-enableArchive true \
+-redoLogFileSize 100
+
+Output is:
+
+[WARNING] [DBT-06801] Specified Fast Recovery Area size (3,200 MB) is less than the recommended value.
+   CAUSE: Fast Recovery Area size should at least be three times the database size (2,430 MB).
+   ACTION: Specify Fast Recovery Area Size to be at least three times the database size.
+[WARNING] [DBT-06208] The 'SYS' password entered does not conform to the Oracle recommended standards.
+   CAUSE: 
+a. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9].
+b.The password entered is a keyword that Oracle does not recommend to be used as password
+   ACTION: Specify a strong password. If required refer Oracle documentation for guidelines.
+[WARNING] [DBT-06208] The 'SYSTEM' password entered does not conform to the Oracle recommended standards.
+   CAUSE: 
+a. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9].
+b.The password entered is a keyword that Oracle does not recommend to be used as password
+   ACTION: Specify a strong password. If required refer Oracle documentation for guidelines.
+[WARNING] [DBT-06208] The 'PDBADMIN' password entered does not conform to the Oracle recommended standards.
+   CAUSE: 
+a. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9].
+b.The password entered is a keyword that Oracle does not recommend to be used as password
+   ACTION: Specify a strong password. If required refer Oracle documentation for guidelines.
+[WARNING] [DBT-06801] Specified Fast Recovery Area size (3,200 MB) is less than the recommended value.
+   CAUSE: Fast Recovery Area size should at least be three times the database size (3,271 MB).
+   ACTION: Specify Fast Recovery Area Size to be at least three times the database size.
+Copying database files
+1% complete
+13% complete
+25% complete
+Creating and starting Oracle instance
+26% complete
+30% complete
+31% complete
+35% complete
+38% complete
+39% complete
+41% complete
+Completing Database Creation
+42% complete
+43% complete
+44% complete
+46% complete
+49% complete
+50% complete
+Creating Pluggable Databases
+55% complete
+75% complete
+Executing Post Configuration Actions
+100% complete
+Look at the log file "/u01/oracle/cfgtoollogs/dbca/CDB/CDB0.log" for further details.
+
+I have checked created database with:
+
+$ sqlplus / as sysdba
+
+SQL*Plus: Release 12.2.0.1.0 Production on Wed Mar 1 21:52:21 2017
+
+Copyright (c) 1982, 2016, Oracle.  All rights reserved.
+
+
+Connected to:
+Oracle Database 12c Enterprise Edition Release 12.2.0.1.0 - 64bit Production
+
+SQL> select * from v$version;
+
+BANNER
+--------------------------------------------------------------------------------
+    CON_ID
+----------
+Oracle Database 12c Enterprise Edition Release 12.2.0.1.0 - 64bit Production
+	 0
+
+PL/SQL Release 12.2.0.1.0 - Production
+	 0
+
+CORE	12.2.0.1.0	Production
+	 0
+
+
+BANNER
+--------------------------------------------------------------------------------
+    CON_ID
+----------
+TNS for Linux: Version 12.2.0.1.0 - Production
+	 0
+
+NLSRTL Version 12.2.0.1.0 - Production
+	 0
+
+
+SQL> select name, cdb, log_mode from v$database;
+
+NAME	  CDB LOG_MODE
+--------- --- ------------
+CDB	  YES ARCHIVELOG
+
+SQL> show pdbs
+
+    CON_ID CON_NAME			  OPEN MODE  RESTRICTED
+---------- ------------------------------ ---------- ----------
+	 2 PDB$SEED			  READ ONLY  NO
+	 3 PDB				  READ WRITE NO
+
+I have used following script to create a non-container database named NCDB with:
+
+dbca -silent \
+-createDatabase \
+-templateName General_Purpose.dbc \
+-gdbName NCDB \
+-sid NCDB \
+-createAsContainerDatabase false \
+-SysPassword oracle12c \
+-SystemPassword oracle12c \
+-emConfiguration NONE \
+-storageType FS \
+-datafileDestination /u01/oradata \
+-recoveryAreaDestination /u01/fra \
+-recoveryAreaSize 3200  \
+-characterSet AL32UTF8 \
+-memoryPercentage 40 \
+-enableArchive true \
+-redoLogFileSize 100 
+
+Output is:
+
+[WARNING] [DBT-06208] The 'SYS' password entered does not conform to the Oracle recommended standards.
+   CAUSE: 
+a. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9].
+b.The password entered is a keyword that Oracle does not recommend to be used as password
+   ACTION: Specify a strong password. If required refer Oracle documentation for guidelines.
+[WARNING] [DBT-06208] The 'SYSTEM' password entered does not conform to the Oracle recommended standards.
+   CAUSE: 
+a. Oracle recommends that the password entered should be at least 8 characters in length, contain at least 1 uppercase character, 1 lower case character and 1 digit [0-9].
+b.The password entered is a keyword that Oracle does not recommend to be used as password
+   ACTION: Specify a strong password. If required refer Oracle documentation for guidelines.
+[WARNING] [DBT-06801] Specified Fast Recovery Area size (3,200 MB) is less than the recommended value.
+   CAUSE: Fast Recovery Area size should at least be three times the database size (2,372 MB).
+   ACTION: Specify Fast Recovery Area Size to be at least three times the database size.
+Copying database files
+1% complete
+2% complete
+18% complete
+33% complete
+Creating and starting Oracle instance
+35% complete
+40% complete
+44% complete
+49% complete
+50% complete
+53% complete
+55% complete
+Completing Database Creation
+56% complete
+57% complete
+58% complete
+62% complete
+65% complete
+66% complete
+Executing Post Configuration Actions
+100% complete
+Look at the log file "/u01/oracle/cfgtoollogs/dbca/NCDB/NCDB.log" for further details.
+
+I have checked created database with:
+
+SQL> select name, cdb, log_mode from v$database;
+
+NAME	  CDB LOG_MODE
+--------- --- ------------
+NCDB	  NO  ARCHIVELOG
+
+SQL> show pdbs
+SQL> select * from v$version;
+
+BANNER
+--------------------------------------------------------------------------------
+    CON_ID
+----------
+Oracle Database 12c Enterprise Edition Release 12.2.0.1.0 - 64bit Production
+	 0
+
+PL/SQL Release 12.2.0.1.0 - Production
+	 0
+
+CORE	12.2.0.1.0	Production
+	 0
+
+
+BANNER
+--------------------------------------------------------------------------------
+    CON_ID
+----------
+TNS for Linux: Version 12.2.0.1.0 - Production
+	 0
+
+NLSRTL Version 12.2.0.1.0 - Production
+	 0
+
+
+SQL> select name from v$datafile;
+
+NAME
+--------------------------------------------------------------------------------
+/u01/oradata/NCDB/system01.dbf
+/u01/oradata/NCDB/sysaux01.dbf
+/u01/oradata/NCDB/undotbs01.dbf
+/u01/oradata/NCDB/users01.dbf
+
+SQL> select name from v$controlfile;
+
+NAME
+--------------------------------------------------------------------------------
+/u01/oradata/NCDB/control01.ctl
+/u01/fra/NCDB/control02.ctl
+
+SQL> select member from v$logfile;
+
+MEMBER
+--------------------------------------------------------------------------------
+/u01/oradata/NCDB/redo03.log
+/u01/oradata/NCDB/redo02.log
+/u01/oradata/NCDB/redo01.log
+
+Conclusion
+
+Silent installation and database creation for Oracle 12.2.0.1 has not changed at lot with respect to 12.1.0.2 (but looks easier than in Oracle Cloud when using command line scripts).

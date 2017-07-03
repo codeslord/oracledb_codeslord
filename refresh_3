@@ -1,0 +1,214 @@
+ Shell script to automate instance refresh
+Shell script to refresh the instance:
+#!/bin/ksh
+################################################
+###This Script can be used to automate the schema refresh.
+###Author: Anbu Subramanian
+###Date :03/12/2008
+################################################
+### All parameters should be in lower case
+.# $1 ='yes' to backup and ='no' not to backup the schema to be refreshed.
+# $2 is the Database to be refreshed.
+# $3 is Schema Owner to be refreshed.
+# $4 ='yes' to export the production schema ='no' to use the availabale file.
+# $5 is the Production database (the source database for the refresh)
+# $6 is the production schema owner(the source schema for the refresh)
+# $7 ='yes' to run the sql scripts thru this script ='no' to run the sql scripts manually
+##############################################
+FILEDIR=/u02/oracle/refresh
+mailto:dba_team=
+/.102boraenv
+dtstamp=`date +%m%d%Y`
+opwd=`cat /u02/oracle/refresh/.infodb.$2.$3`
+opwd1=`cat /u02/oracle/refresh/.infodb.$5.$6`
+#rm -rf $FILEDIR/$2_$3_$dtstamp.dmp
+rm -rf $FILEDIR/$2_$3_$dtstamp.log
+rm -rf $FILEDIR/exp_$2_$3_$dtstamp.log
+#rm -rf $FILEDIR/$6_$7_$dtstamp.dmp
+rm -rf $FILEDIR/$6_$7_$dtstamp.log
+rm -rf $FILEDIR/exp_$6_$7_$dtstamp.log
+rm -rf $FILEDIR/imp_$2_$3_$dtstamp.log
+rm -rf $FILEDIR/imp_$2_$3_$dtstamp.log1
+#############Backup the existing schema to be refreshed.
+echo The $3@$2 export starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/exp_$2_$3_$dtstamp.log
+if [ $1 = "yes" ] then
+export opwd
+exp owner=$3 buffer=999999999 direct=n consistent=y statistics=none \
+file=$FILEDIR/$2_$3_$dtstamp.dmp \
+log=$FILEDIR/$2_$3_$dtstamp.log >>$FILEDIR/exp_$2_$3_$dtstamp.log 2>&1 <<>
+$opwd@$2
+ENDD
+/usr/bin/cat $FILEDIR/$2_$3_$dtstamp.log grep 'Export terminated successfully without warnings.' >>$FILEDIR/exp_$2_$3_$dtstamp.log
+if [ $? != 0 ]
+then
+mailx -s "Error in exporting $3@$2 on $dtstamp " $dba_team <$3@$2 on $dtstamp.The $3@$2 refresh process stopped.
+EOMAIL
+exit 10
+fi
+else
+echo "The schema backup of $3@$2 not done." >>$FILEDIR/exp_$2_$3_$dtstamp.log
+fi
+echo The $3@$2 export ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/exp_$2_$3_$dtstamp.log
+#############Backup the production schema for refresh
+echo The $6@$5 export starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/exp_$5_$6_$dtstamp.log
+if [ $4 = "yes" ]
+then
+export opwd1
+exp owner=$6 buffer=999999999 direct=n consistent=y statistics=none \
+file=$FILEDIR/$5_$6_$dtstamp.dmp \
+log=$FILEDIR/$5_$6_$dtstamp.log >>$FILEDIR/exp_$5_$6_$dtstamp.log 2>&1 <<>
+$opwd1@$5
+ENDD
+/usr/bin/cat $FILEDIR/$5_$6_$dtstamp.log grep 'Export terminated successfully without warnings.' >>$FILEDIR/exp_$5_$6_$dtstamp.log
+if [ $? != 0 ]
+then
+mailx -s "Error in exporting $6@$5 on $dtstamp " $dba_team <$6@$5 on $dtstamp.The $6@$5 refresh process stopped.
+EOMAIL
+exit 10
+fi
+else
+echo "The schema export of $6@$5 not needed. Use the old export file." >>$FILEDIR/exp_$5_$6_$dtstamp.logfiecho The $6@$5 export ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/exp_$5_$6_$dtstamp.log
+##########################Drop the objects from the schema to be refreshed.
+echo The trashing objects of $3@$2 starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/trash_$2_$3_$dtstamp.log
+sqlplus -s > /dev/null <mailto:END1$opwd@$2
+spool $FILEDIR/drop_$2_$3_$dtstamp.sql
+start $FILEDIR/drop_objects.sql
+spool off
+END1
+sqlplus -s < $FILEDIR/drop_$2_$3_$dtstamp.log 2>&1
+mailto:&1$opwd@$2
+set echo on
+set feedback on
+set term on
+start $FILEDIR/drop_$2_$3_$dtstamp.sql
+purge recyclebin;
+END2
+/usr/bin/cat $FILEDIR/drop_$2_$3_$dtstamp.sql >>$FILEDIR/trash_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/drop_$2_$3_$dtstamp.log >>$FILEDIR/trash_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/drop_$2_$3_$dtstamp.log grep 'ORA-' >>$FILEDIR/trash_$2_$3_$dtstamp.log
+if [ $? = 0 ]
+then
+mailx -s "Error in dropping objects in $3@$2 on $dtstamp " $dba_team <
+Error in dropping $3@$2 on $dtstamp.The $3@$2 refresh process continues.
+EOMAIL
+fi
+echo The trashing objects of $3@$2 ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/trash_$2_$3_$dtstamp.log
+#############Import into the schema to be refreshed.
+echo The importing into $3@$2 starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/imp_$2_$3_$dtstamp.log1
+imp buffer=999999999 ignore=y commit=y fromuser=$6 touser=$3 \
+file=$FILEDIR/$5_$6_$dtstamp.dmp \
+log= $FILEDIR/imp_$2_$3_$dtstamp.log >>$FILEDIR/imp_$2_$3_$dtstamp.log1 2>&1 <<>
+$opwd@$2
+END3
+/usr/bin/cat $FILEDIR/imp_$2_$3_$dtstamp.log grep 'Import terminated successfully without warnings.' >> $FILEDIR/imp_$2_$3_$dtstamp.log1
+if [ $? != 0 ]
+then
+mailx -s "Error in importing $3@$2 on $dtstamp " $dba_team <
+Error in importing $3@$2 on $dtstamp.Please check the import log.
+EOMAIL
+fi
+echo The importing into $3@$2 ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/imp_$2_$3_$dtstamp.log1
+############The scripts to be run.
+echo The scripts for $3@$2 starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/sql_$2_$3_$dtstamp.logi
+f [ $7 = "yes" ]
+then
+echo Run the scripts for $3@$2 using this script on $dtstamp. >>$FILEDIR/sql_$2_$3_$dtstamp.log
+else echo Run the scripts for $3@$2 manually on $dtstamp. >>$FILEDIR/sql_$2_$3_$dtstamp.log
+fi
+echo The scripts for $3@$2 ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/sql_$2_$3_$dtstamp.log
+#########Compile the schema few times to fix the invalid objects.
+echo The fixinval script starting at `date +%m-%d-%Y:%H:%M:%S` >$FILEDIR/fixinval_$2_$3_$dtstamp.log
+sqlplus -s > /dev/null <
+$opwd@$2
+spool $FILEDIR/fixinval_$2_$3_$dtstamp.log1
+set echo on
+start $FILEDIR/run_fixinval.sql
+spool off
+END4
+echo The fixinval script ending at `date +%m-%d-%Y:%H:%M:%S` >>$FILEDIR/fixinval_$2_$3_$dtstamp.log
+##################### Mail the log for the whole refresh process.
+echo The log files for $3@$2 refresh on $dtstamp. > $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo ----------------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 1.The export backup log of $3@$2 on $dtstamp. >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo --------------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/exp_$2_$3_$dtstamp.log >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '#######################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 2.The export log of $6@$5 on $dtstamp. >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo ---------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log/usr/bin/cat $FILEDIR/exp_$5_$6_$dtstamp.log >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '#######################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 3.The log for trashing $3@$2 obejcts on $dtstamp. >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo ------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/trash_$2_$3_$dtstamp.log >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '######################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 4.The import log of $3@$2 on $dtstamp. >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo ----------------------------------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/imp_$2_$3_$dtstamp.log1 >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '###############################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 5.The log of sql scripts ran at $3@$2 on $dtstamp.>> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo ---------------------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/sql_$2_$3_$dtstamp.log >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '########################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo 6.The fixinvalid log of $3@$2 on $dtstamp. >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo -------------------------------------------------------- >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+/usr/bin/cat $FILEDIR/fixinval_$2_$3_$dtstamp.log >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+echo '########################################################' >> $FILEDIR/refresh_$2_$3_$dtstamp.log
+mailx -s "The refresh of $3@$2 on $dtstamp1." $dba_team< $FILEDIR/refresh_$2_$3_$dtstamp.log drop_objects.sql
+
+set serveroutput off
+set echo off
+show off
+set feedback off
+pages 0
+set term of
+fselect 'drop table 'table_name' cascade constraints;'from user_tables;
+select 'drop sequence 'sequence_name';' from user_sequences;
+select 'drop synonym 'synonym_name';' from user_synonyms;
+select 'drop 'object_type' 'object_name';' from user_objects
+where object_type ^= 'TABLE'
+and object_type ^= 'TRIGGER'
+and object_type ^= 'SEQUENCE'
+and object_type ^= 'SYNONYM'
+and object_type ^= 'PACKAGE BODY'
+and object_type ^= 'INDEX'
+and object_type ^= 'LOB'
+and object_type ^='DATABASE LINK';
+
+run_fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+@fixinval.sql
+
+fixinval.sql
+--Recompile all invalid objects
+set echo off
+show off
+set feedback off
+pages 0
+set term off
+spool bldfixinval.sql
+select 'alter 'object_type' 'object_name' compile;'
+from user_objects
+where status = 'INVALID'
+and object_type ^= 'PACKAGE BODY' order by object_type;
+select 'alter PACKAGE 'object_name' compile;'
+from user_objects
+where status = 'INVALID' and object_type = 'PACKAGE BODY';
+spool off
+set term on
+feedback on
+pages 20
+lines 80
+echo on
+spool bldfixinval
+@bldfixinval
+spool off
+set echo off
+
